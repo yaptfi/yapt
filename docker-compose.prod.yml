@@ -1,0 +1,13 @@
+# Production overrides for docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    volumes:
+      # Override to use external volume that persists across deployments
+      - yapt_pgdata:/var/lib/postgresql/data
+
+volumes:
+  # External volume (already exists on production server)
+  yapt_pgdata:
+    external: true

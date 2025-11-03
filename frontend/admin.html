@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin - Yapt</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="/config.js"></script>
+  <style>
+    .admin-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+
+    .admin-header h1 {
+      margin: 0;
+    }
+
+    .back-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    .wallets-table {
+      width: 100%;
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+
+    .wallets-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .wallets-table th,
+    .wallets-table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .wallets-table td.wrap-allowed {
+      white-space: normal;
+    }
+
+    .wallets-table th {
+      font-weight: 600;
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .wallets-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .wallets-table tr:hover {
+      background: rgba(16, 185, 129, 0.05);
+    }
+
+    .wallet-address {
+      font-family: 'Monaco', 'Courier New', monospace;
+      font-size: 0.875rem;
+    }
+
+    .ens-name {
+      color: var(--primary);
+      font-weight: 500;
+    }
+
+    .stats {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+
+    .stat {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    .stat-label {
+      font-weight: 500;
+    }
+
+    .btn-delete {
+      background: var(--danger);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: opacity 0.2s;
+    }
+
+    .btn-delete:hover {
+      opacity: 0.8;
+    }
+
+    .btn-delete:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-dim);
+    }
+
+    .warning-banner {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      color: var(--danger);
+    }
+
+    .warning-banner strong {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    /* RPC Provider styles */
+    .rpc-section {
+      margin-top: 3rem;
+    }
+
+    .add-provider-form {
+      background: var(--card-bg);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .form-field label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-dim);
+    }
+
+    .form-field input,
+    .form-field select {
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.875rem;
+    }
+
+    .form-field input:focus,
+    .form-field select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .form-field input[type="number"] {
+      max-width: 150px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.625rem 1.25rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: opacity 0.2s;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.8;
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-toggle {
+      background: var(--warning);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: opacity 0.2s;
+    }
+
+    .btn-toggle.inactive {
+      background: var(--text-dim);
+    }
+
+    .btn-toggle:hover {
+      opacity: 0.8;
+    }
+
+    .provider-status {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .provider-status.healthy {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--primary);
+    }
+
+    .provider-status.degraded {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+    }
+
+    .provider-status.inactive {
+      background: rgba(107, 114, 128, 0.2);
+      color: var(--text-dim);
+    }
+
+    .metric {
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+
+    .metric strong {
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div id="header-placeholder"></div>
+
+  <div class="container">
+
+    <div class="warning-banner">
+      <strong>⚠️ Warning: Hard Delete</strong>
+      Deleting a wallet will permanently remove the wallet, all its positions, and all historical snapshots from the database. This action cannot be undone.
+    </div>
+
+    <div class="wallets-table">
+      <h2 style="margin-top: 0; margin-bottom: 1.5rem;">All Wallets</h2>
+      <div id="walletsTable">
+        <p class="empty-state">Loading wallets...</p>
+      </div>
+    </div>
+
+    <!-- RPC Providers Section -->
+    <div class="rpc-section">
+      <h2 style="margin-bottom: 1.5rem;">RPC Providers</h2>
+
+      <div class="add-provider-form">
+        <h3 style="margin-top: 0; margin-bottom: 1rem;">Add New Provider</h3>
+        <form id="addProviderForm" onsubmit="addProvider(event)">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="providerName">Name *</label>
+              <input type="text" id="providerName" required placeholder="e.g., Infura Primary">
+            </div>
+            <div class="form-field">
+              <label for="providerUrl">URL *</label>
+              <input type="url" id="providerUrl" required placeholder="https://mainnet.infura.io/v3/...">
+            </div>
+            <div class="form-field">
+              <label for="providerCallsPerSec">Calls/Second *</label>
+              <input type="number" id="providerCallsPerSec" required min="0.1" max="1000" step="0.1" value="10">
+            </div>
+            <div class="form-field">
+              <label for="providerCallsPerDay">Calls/Day (optional)</label>
+              <input type="number" id="providerCallsPerDay" min="1" placeholder="Leave empty for unlimited">
+            </div>
+            <div class="form-field">
+              <label for="providerPriority">Priority *</label>
+              <input type="number" id="providerPriority" required value="0" placeholder="Higher = preferred">
+            </div>
+            <div class="form-field">
+              <label for="providerSupportsLargeScans" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" id="providerSupportsLargeScans" checked style="width: auto; height: auto; margin: 0;">
+                <span>Large Block Scans</span>
+              </label>
+              <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
+                Uncheck for Alchemy/GetBlock (10-2k block limits)
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="providerSupportsENS" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" id="providerSupportsENS" checked style="width: auto; height: auto; margin: 0;">
+                <span>ENS Resolution</span>
+              </label>
+              <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
+                Uncheck if provider doesn't support ENS
+              </div>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-primary">Add Provider</button>
+            <span id="addProviderStatus" style="font-size: 0.875rem; color: var(--text-dim);"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="wallets-table">
+        <div id="providersTable">
+          <p class="empty-state">Loading providers...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/components/header.js"></script>
+  <script src="config.js"></script>
+  <script>
+    const API_BASE = (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.apiBase)
+      ? window.APP_CONFIG.apiBase
+      : '/api';
+
+    // Check authentication and admin status on page load
+    async function checkAuth() {
+      try {
+        const response = await fetch(`${API_BASE}/auth/me`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          // Not authenticated - redirect to home
+          window.location.href = '/';
+          return false;
+        }
+
+        const data = await response.json();
+
+        if (!data.user || !data.user.isAdmin) {
+          // Not an admin - redirect to home
+          alert('Access denied. Admin privileges required.');
+          window.location.href = '/';
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        window.location.href = '/';
+        return false;
+      }
+    }
+
+    function shortAddr(addr) {
+      if (!addr || addr.length < 10) return addr || '';
+      return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    }
+
+    async function loadWallets() {
+      const container = document.getElementById('walletsTable');
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/wallets`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load wallets');
+        }
+
+        const data = await response.json();
+        const wallets = data.wallets || [];
+
+        if (wallets.length === 0) {
+          container.innerHTML = '<p class="empty-state">No wallets in the database</p>';
+          return;
+        }
+
+        container.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Address</th>
+                <th>Created</th>
+                <th>Stats</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wallets.map(wallet => {
+                const created = new Date(wallet.createdAt).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                });
+
+                const hasEns = wallet.ensName && wallet.ensName.length > 0;
+                const displayName = hasEns
+                  ? `<span class="ens-name">${wallet.ensName}</span> <span style="color: var(--text-dim); font-size: 0.875rem;">(${shortAddr(wallet.address)})</span>`
+                  : `<span class="wallet-address">${wallet.address}</span>`;
+
+                return `
+                  <tr>
+                    <td>${displayName}</td>
+                    <td style="color: var(--text-dim); font-size: 0.875rem;">${created}</td>
+                    <td>
+                      <div class="stats">
+                        <div class="stat">
+                          <span class="stat-label">Users:</span>
+                          <span>${wallet.userCount}</span>
+                        </div>
+                        <div class="stat">
+                          <span class="stat-label">Positions:</span>
+                          <span>${wallet.positionCount}</span>
+                        </div>
+                        <div class="stat">
+                          <span class="stat-label">Snapshots:</span>
+                          <span>${wallet.snapshotCount}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 0.5rem;">
+                        <a
+                          href="/guest.html?wallet=${wallet.id}"
+                          target="_blank"
+                          class="btn btn-secondary btn-small"
+                          style="text-decoration: none; display: inline-block;"
+                        >
+                          View as Guest
+                        </a>
+                        <button
+                          class="btn-delete"
+                          onclick="deleteWallet('${wallet.id}', '${hasEns ? wallet.ensName : wallet.address}')"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (error) {
+        console.error('Failed to load wallets:', error);
+        container.innerHTML = `<p class="empty-state" style="color: var(--danger)">Error loading wallets: ${error.message}</p>`;
+      }
+    }
+
+    async function deleteWallet(walletId, displayName) {
+      if (!confirm(`Are you sure you want to permanently delete wallet ${displayName} and ALL its data?\n\nThis will delete:\n- The wallet record\n- All positions\n- All historical snapshots\n- All user links\n\nThis action CANNOT be undone!`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/wallets/${walletId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to delete wallet');
+        }
+
+        alert(`Successfully deleted wallet ${displayName}\n\nDeleted:\n- ${data.deleted.positions} positions\n- ${data.deleted.snapshots} snapshots\n- ${data.deleted.users} user links`);
+
+        // Reload the table
+        loadWallets();
+      } catch (error) {
+        alert(`Failed to delete wallet: ${error.message}`);
+      }
+    }
+
+    // === RPC Provider Management ===
+
+    async function loadProviders() {
+      const container = document.getElementById('providersTable');
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/rpc-providers`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load RPC providers');
+        }
+
+        const data = await response.json();
+        const providers = data.providers || [];
+        const status = data.status;
+
+        if (providers.length === 0) {
+          container.innerHTML = '<p class="empty-state">No RPC providers configured. Add one above or configure via environment variables.</p>';
+          return;
+        }
+
+        // Create a map of provider status by name
+        const statusMap = new Map();
+        if (status && status.providers) {
+          status.providers.forEach(p => {
+            statusMap.set(p.name, p);
+          });
+        }
+
+        container.innerHTML = `
+          <table style="table-layout: fixed; width: 100%;">
+            <colgroup>
+              <col style="width: 10%;">
+              <col style="width: 15%;">
+              <col style="width: 8%;">
+              <col style="width: 5%;">
+              <col style="width: 12%;">
+              <col style="width: 8%;">
+              <col style="width: 12%;">
+              <col style="width: 15%;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>URL</th>
+                <th>Rate Limits</th>
+                <th>Priority</th>
+                <th>Capabilities</th>
+                <th>Status</th>
+                <th>Metrics</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${providers.map(provider => {
+                const providerStatus = statusMap.get(provider.name);
+                const isHealthy = providerStatus?.isHealthy ?? provider.isActive;
+                const statusClass = !provider.isActive ? 'inactive' : (isHealthy ? 'healthy' : 'degraded');
+                const statusText = !provider.isActive ? 'Inactive' : (isHealthy ? 'Healthy' : 'Degraded');
+
+                const callsPerDay = provider.callsPerDay
+                  ? provider.callsPerDay.toLocaleString()
+                  : 'Unlimited';
+
+                let metricsHtml = '<span style="color: var(--text-dim); font-size: 0.875rem;">No data</span>';
+
+                if (providerStatus && provider.isActive) {
+                  metricsHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                      <div class="metric">
+                        <strong>Tokens:</strong> ${providerStatus.availableTokens.toFixed(1)}/${provider.callsPerSecond * 2}
+                      </div>
+                      <div class="metric">
+                        <strong>Daily:</strong> ${providerStatus.dailyCallCount}/${callsPerDay}
+                      </div>
+                      ${providerStatus.consecutiveErrors > 0 ? `
+                        <div class="metric" style="color: var(--danger);">
+                          <strong>Errors:</strong> ${providerStatus.consecutiveErrors}
+                        </div>
+                      ` : ''}
+                    </div>
+                  `;
+                }
+
+                return `
+                  <tr>
+                    <td style="font-weight: 500;">${provider.name}</td>
+                    <td>
+                      <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${provider.url}">
+                        ${provider.url}
+                      </div>
+                    </td>
+                    <td>
+                      <div style="font-size: 0.875rem;">
+                        <div>${provider.callsPerSecond}/sec</div>
+                        <div style="color: var(--text-dim); font-size: 0.75rem;">${callsPerDay}/day</div>
+                      </div>
+                    </td>
+                    <td style="text-align: center;">
+                      <span style="font-weight: 500;">${provider.priority}</span>
+                    </td>
+                    <td>
+                      <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
+                        <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                          <input
+                            type="checkbox"
+                            ${provider.supportsLargeBlockScans ? 'checked' : ''}
+                            onchange="toggleCapability(${provider.id}, 'supportsLargeBlockScans', this.checked)"
+                            style="cursor: pointer;"
+                          >
+                          <span>Block Scans</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                          <input
+                            type="checkbox"
+                            ${provider.supportsENS !== false ? 'checked' : ''}
+                            onchange="toggleCapability(${provider.id}, 'supportsENS', this.checked)"
+                            style="cursor: pointer;"
+                          >
+                          <span>ENS</span>
+                        </label>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="provider-status ${statusClass}">${statusText}</span>
+                    </td>
+                    <td>${metricsHtml}</td>
+                    <td>
+                      <div style="display: flex; gap: 0.5rem;">
+                        <button
+                          class="btn-toggle ${provider.isActive ? '' : 'inactive'}"
+                          onclick="toggleProvider(${provider.id}, ${!provider.isActive})"
+                        >
+                          ${provider.isActive ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          class="btn-delete"
+                          onclick="deleteProvider(${provider.id}, '${provider.name}')"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (error) {
+        console.error('Failed to load providers:', error);
+        container.innerHTML = `<p class="empty-state" style="color: var(--danger)">Error loading providers: ${error.message}</p>`;
+      }
+    }
+
+    async function addProvider(event) {
+      event.preventDefault();
+
+      const statusEl = document.getElementById('addProviderStatus');
+      const submitBtn = event.target.querySelector('button[type="submit"]');
+
+      const provider = {
+        name: document.getElementById('providerName').value.trim(),
+        url: document.getElementById('providerUrl').value.trim(),
+        callsPerSecond: parseFloat(document.getElementById('providerCallsPerSec').value),
+        callsPerDay: document.getElementById('providerCallsPerDay').value
+          ? parseInt(document.getElementById('providerCallsPerDay').value)
+          : undefined,
+        priority: parseInt(document.getElementById('providerPriority').value),
+        isActive: true,
+        supportsLargeBlockScans: document.getElementById('providerSupportsLargeScans').checked,
+        supportsENS: document.getElementById('providerSupportsENS').checked,
+      };
+
+      try {
+        submitBtn.disabled = true;
+        statusEl.textContent = 'Adding provider...';
+        statusEl.style.color = 'var(--text-dim)';
+
+        const response = await fetch(`${API_BASE}/admin/rpc-providers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(provider),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to add provider');
+        }
+
+        statusEl.textContent = 'Provider added successfully!';
+        statusEl.style.color = 'var(--primary)';
+
+        // Reset form
+        event.target.reset();
+        document.getElementById('providerCallsPerSec').value = '10';
+        document.getElementById('providerPriority').value = '0';
+
+        // Reload providers table
+        await loadProviders();
+
+        setTimeout(() => {
+          statusEl.textContent = '';
+        }, 3000);
+      } catch (error) {
+        statusEl.textContent = `Error: ${error.message}`;
+        statusEl.style.color = 'var(--danger)';
+      } finally {
+        submitBtn.disabled = false;
+      }
+    }
+
+    async function toggleProvider(providerId, isActive) {
+      try {
+        const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ isActive }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update provider');
+        }
+
+        await loadProviders();
+      } catch (error) {
+        alert(`Failed to toggle provider: ${error.message}`);
+      }
+    }
+
+    async function toggleCapability(providerId, capability, value) {
+      try {
+        const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ [capability]: value }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update capability');
+        }
+
+        // Silently reload - no alert needed for checkbox toggles
+        await loadProviders();
+      } catch (error) {
+        alert(`Failed to update capability: ${error.message}`);
+        // Reload to revert the checkbox
+        await loadProviders();
+      }
+    }
+
+    async function deleteProvider(providerId, name) {
+      if (!confirm(`Are you sure you want to delete the RPC provider "${name}"?\n\nThis will remove the provider from the database and reload the RPC manager.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to delete provider');
+        }
+
+        alert(`Successfully deleted provider "${name}"`);
+        await loadProviders();
+      } catch (error) {
+        alert(`Failed to delete provider: ${error.message}`);
+      }
+    }
+
+    // Check auth and load data on page load
+    (async () => {
+      const isAuthorized = await checkAuth();
+      if (isAuthorized) {
+        loadWallets();
+        loadProviders();
+
+        // Auto-refresh provider metrics every 30 seconds
+        setInterval(() => {
+          loadProviders();
+        }, 30000);
+      }
+    })();
+  </script>
+</body>
+</html>

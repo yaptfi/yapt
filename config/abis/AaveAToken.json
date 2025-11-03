@@ -1,0 +1,27 @@
+[
+  {
+    "constant": true,
+    "inputs": [{"name": "user", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"name": "", "type": "uint256"}],
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "UNDERLYING_ASSET_ADDRESS",
+    "outputs": [{"name": "", "type": "address"}],
+    "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true, "name": "from", "type": "address"},
+      {"indexed": true, "name": "to", "type": "address"},
+      {"indexed": false, "name": "value", "type": "uint256"},
+      {"indexed": false, "name": "index", "type": "uint256"}
+    ],
+    "name": "Transfer",
+    "type": "event"
+  }
+]

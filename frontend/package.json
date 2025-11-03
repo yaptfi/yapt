@@ -1,0 +1,9 @@
+{
+  "name": "yapt-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight static frontend for Yapt",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-defi_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-defi_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-defi_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U defi_user -d defi_tracker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yapt-network
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yapt-network
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+      - "3443:3443" # HTTPS API
+      - "8080:8080" # Frontend UI
+    volumes:
+      - ./cert.pem:/app/cert.pem:ro
+      - ./key.pem:/app/key.pem:ro
+    # Load all key/value pairs from .env into the container environment
+    # so new variables do not require edits to this file.
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-3000}
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
+      HTTPS_CERT: ${HTTPS_CERT:-/app/cert.pem}
+      HTTPS_KEY: ${HTTPS_KEY:-/app/key.pem}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-defi_user}:${POSTGRES_PASSWORD:-defi_password}@postgres:5432/${POSTGRES_DB:-defi_tracker}
+      REDIS_URL: redis://redis:6379
+      ETH_RPC_URL: ${ETH_RPC_URL}
+      SESSION_SECRET: ${SESSION_SECRET:-change-this-secret-in-production}
+      UPDATE_CRON_MINUTE: ${UPDATE_CRON_MINUTE:-48} # Prod default: 48 (dev uses 38)
+      SERVE_FRONTEND: ${SERVE_FRONTEND:-true}
+      FRONTEND_PORT: ${FRONTEND_PORT:-8080}
+      # Guest defaults (optional)
+      GUEST_DEFAULT_WALLET_ID: ${GUEST_DEFAULT_WALLET_ID}
+      # WebAuthn Configuration
+      RP_NAME: ${RP_NAME:-Yapt}
+      RP_ID: ${RP_ID:-localhost}
+      ORIGIN: ${ORIGIN:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - yapt-network
+    healthcheck:
+      test: ["CMD", "/app/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+  # Migration service - runs once to set up database
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-defi_user}:${POSTGRES_PASSWORD:-defi_password}@postgres:5432/${POSTGRES_DB:-defi_tracker}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run migrate
+    networks:
+      - yapt-network
+    restart: "no"
+volumes:
+  redis_data:
+  postgres_data:
+networks:
+  yapt-network:
+    driver: bridge

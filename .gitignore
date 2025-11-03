@@ -1,0 +1,61 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Debug scripts
+scripts/test-uniswap-*.ts
+scripts/debug-uniswap-*.ts
+
+# Secrets and credentials
+*.pem
+*.key
+*.cert
+credentials.json
+secrets.json
+
+# Local project docs
+DEPLOYMENT.md
+
+# Docker Compose local overrides
+docker-compose.override.yml

@@ -1,0 +1,62 @@
+<div class="auth-card">
+  <div class="auth-header">
+    <img src="/assets/yapt_logo.png" alt="Yapt" class="auth-logo" width="64" height="64">
+    <h1>Yapt</h1>
+    <p class="auth-subtitle">Secure passkey authentication</p>
+  </div>
+
+  <!-- Login Form -->
+  <div id="loginForm" class="auth-form">
+    <h2>Sign In</h2>
+    <form onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label for="loginUsername">Username</label>
+        <input
+          type="text"
+          id="loginUsername"
+          placeholder="Enter your username"
+          required
+          autocomplete="username webauthn"
+        >
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">
+        Sign in with Passkey
+      </button>
+    </form>
+    <div class="auth-message" id="loginMessage"></div>
+    <div class="auth-footer">
+      <p>
+        Don't have an account? <a href="#" onclick="showRegisterForm(); return false;">Register</a>
+        <span class="auth-footer-extra"></span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Register Form -->
+  <div id="registerForm" class="auth-form" style="display: none;">
+    <h2>Create Account</h2>
+    <form onsubmit="handleRegister(event)">
+      <div class="form-group">
+        <label for="registerUsername">Username</label>
+        <input
+          type="text"
+          id="registerUsername"
+          placeholder="Choose a username (min 3 characters)"
+          required
+          minlength="3"
+          autocomplete="username webauthn"
+        >
+      </div>
+      <div class="auth-info">
+        <p>You'll use a passkey (fingerprint, face ID, or security key) to sign in securely. Get a passkey manager if needed.</p>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">
+        Create Account with Passkey
+      </button>
+    </form>
+    <div class="auth-message" id="registerMessage"></div>
+    <div class="auth-footer">
+      <p>Already have an account? <a href="#" onclick="showLoginForm(); return false;">Sign in</a></p>
+    </div>
+  </div>
+</div>

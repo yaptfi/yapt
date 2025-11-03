@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Yapt - Guest View</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.ico">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <script src="/config.js"></script>
+ </head>
+<body>
+  <!-- Header -->
+  <div id="header-placeholder"></div>
+
+  <div class="container">
+
+    <main>
+      <!-- Portfolio Summary -->
+      <section class="card portfolio-summary" id="portfolioSummary" style="display: none;">
+        <h2>Portfolio Summary</h2>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="label">Total Value</span>
+            <span class="value" id="totalValue">$0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">Est. Daily Income</span>
+            <span class="value" id="dailyIncome">$0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">Est. Monthly Income</span>
+            <span class="value" id="monthlyIncome">$0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">Est. Yearly Income</span>
+            <span class="value" id="yearlyIncome">$0.00</span>
+          </div>
+        </div>
+        <div id="incomeContext" class="income-context" aria-live="polite"></div>
+        <div class="summary-footer">
+          <span class="updated-time" id="lastUpdated">Last updated: Never</span>
+        </div>
+      </section>
+
+      <!-- Wallet Info -->
+      <section class="card wallets-section" id="walletsSection" style="display: none;">
+        <h2>Wallet</h2>
+        <div id="walletInfo" class="wallets-list"></div>
+      </section>
+
+      <!-- Positions Table -->
+      <section class="card positions-section" id="positionsSection" style="display: none;">
+        <h2>Active Positions</h2>
+        <div id="positionsTable" class="positions-table">
+          <p class="empty-state">Loading positions...</p>
+        </div>
+      </section>
+
+      <!-- Error State -->
+      <section class="card" id="errorState" style="display: none;">
+        <div style="text-align: center; padding: 40px 20px;">
+          <h2 style="margin-bottom: 20px; color: var(--danger);">Wallet Not Found</h2>
+          <p style="color: var(--text-dim);">The requested wallet could not be found.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Data updates hourly. Read-only guest view.</p>
+    </footer>
+  </div>
+
+  <script src="/components/header.js"></script>
+  <script src="config.js"></script>
+  <script>
+    const API_BASE = (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.apiBase)
+      ? window.APP_CONFIG.apiBase
+      : '/api';
+
+    // Get wallet ID from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const walletId = urlParams.get('wallet');
+
+    if (!walletId) {
+      document.getElementById('errorState').style.display = 'block';
+    } else {
+      loadGuestView(walletId);
+    }
+
+    async function loadGuestView(walletId) {
+      try {
+        const response = await fetch(`${API_BASE}/guest/wallets/${walletId}`);
+
+        if (!response.ok) {
+          throw new Error('Wallet not found');
+        }
+
+        const data = await response.json();
+        displayWallet(data.wallet);
+        displayPositions(data.positions);
+        calculateSummary(data.positions);
+      } catch (error) {
+        console.error('Failed to load guest view:', error);
+        document.getElementById('errorState').style.display = 'block';
+      }
+    }
+
+    function displayWallet(wallet) {
+      const container = document.getElementById('walletInfo');
+      const hasEns = wallet.ensName && wallet.ensName.length > 0;
+      const display = hasEns ? wallet.ensName : wallet.address;
+      const created = new Date(wallet.createdAt).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+
+      container.innerHTML = `
+        <div class="wallet-item">
+          <div class="wallet-line">
+            <span class="wallet-name" style="font-size: 1.1rem; font-weight: 500;">${display}</span>
+            ${hasEns ? `<span class="wallet-address" style="color: var(--text-dim); font-size: 0.875rem; margin-left: 0.5rem;">${shortAddr(wallet.address)}</span>` : ''}
+            <span class="wallet-meta"> • added: ${created}</span>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('walletsSection').style.display = 'block';
+    }
+
+    function displayPositions(positions) {
+      const container = document.getElementById('positionsTable');
+
+      if (positions.length === 0) {
+        container.innerHTML = '<p class="empty-state">No positions found for this wallet.</p>';
+        document.getElementById('positionsSection').style.display = 'block';
+        return;
+      }
+
+      container.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Position</th>
+              <th>Value (USD)</th>
+              <th>APY</th>
+              <th>7d APY</th>
+              <th>30d APY</th>
+              <th>Est. Daily</th>
+              <th>Est. Monthly</th>
+              <th>Last Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${positions.map(pos => `
+              <tr class="${getApyWarningClass(pos.apy)}">
+                <td>
+                  <div class="position-name">${pos.displayName}</div>
+                  <div class="position-asset">${pos.baseAsset}</div>
+                </td>
+                <td class="amount">${formatCurrency(pos.valueUsd)}</td>
+                <td class="${getApyClass(pos.apy)}">${formatApy(pos.apy)}</td>
+                <td class="${getApyClass(pos.apy7d)}">${formatApy(pos.apy7d)}</td>
+                <td class="${getApyClass(pos.apy30d)}">${formatApy(pos.apy30d)}</td>
+                <td class="amount">${formatCurrency(pos.estDailyUsd)}</td>
+                <td class="amount">${formatCurrency(pos.estMonthlyUsd)}</td>
+                <td>${pos.lastUpdated ? formatDate(pos.lastUpdated) : 'Never'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      document.getElementById('positionsSection').style.display = 'block';
+    }
+
+    function calculateSummary(positions) {
+      const totalValueUsd = positions.reduce((sum, pos) => sum + (pos.valueUsd || 0), 0);
+      const estDailyUsd = positions.reduce((sum, pos) => sum + (pos.estDailyUsd || 0), 0);
+      const estMonthlyUsd = positions.reduce((sum, pos) => sum + (pos.estMonthlyUsd || 0), 0);
+      const estYearlyUsd = positions.reduce((sum, pos) => sum + (pos.estYearlyUsd || 0), 0);
+
+      const lastUpdated = positions.reduce((latest, pos) => {
+        if (!pos.lastUpdated) return latest;
+        const posDate = new Date(pos.lastUpdated);
+        return !latest || posDate > latest ? posDate : latest;
+      }, null);
+
+      document.getElementById('totalValue').textContent = formatCurrency(totalValueUsd);
+      document.getElementById('dailyIncome').textContent = formatCurrency(estDailyUsd);
+      document.getElementById('monthlyIncome').textContent = formatCurrency(estMonthlyUsd);
+      document.getElementById('yearlyIncome').textContent = formatCurrency(estYearlyUsd);
+      document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
+
+      // Render income context
+      renderIncomeContext(estYearlyUsd);
+
+      document.getElementById('portfolioSummary').style.display = 'block';
+    }
+
+    // Income context lookup (cached across calls)
+    let _nycSalaryBands = null;
+    let _locationBands = null;
+
+    async function loadIncomeTables() {
+      if (_nycSalaryBands && _locationBands) return;
+      try {
+        const [nycRes, locRes] = await Promise.all([
+          fetch('/data/nyc-salary-bands.json', { cache: 'no-cache' }),
+          fetch('/data/income-location-bands.json', { cache: 'no-cache' })
+        ]);
+        if (nycRes.ok) {
+          const nycJson = await nycRes.json();
+          _nycSalaryBands = Array.isArray(nycJson) ? nycJson : nycJson.bands || [];
+        }
+        if (locRes.ok) {
+          const locJson = await locRes.json();
+          _locationBands = Array.isArray(locJson) ? locJson : locJson.bands || [];
+        }
+      } catch (e) {
+        console.warn('Failed to load income context tables:', e);
+      }
+    }
+
+    function pickBand(bands, value) {
+      if (!Array.isArray(bands)) return null;
+      for (const band of bands) {
+        const min = Number(band.min) || 0;
+        const max = band.max === null || band.max === undefined ? Infinity : Number(band.max);
+        if (value >= min && value <= max) return band;
+      }
+      return null;
+    }
+
+    async function renderIncomeContext(annualIncome) {
+      const el = document.getElementById('incomeContext');
+      if (!el) return;
+
+      if (!annualIncome || annualIncome <= 0) {
+        el.innerHTML = '';
+        return;
+      }
+
+      await loadIncomeTables();
+      if (!_nycSalaryBands || !_locationBands) {
+        el.innerHTML = '';
+        return;
+      }
+
+      const nycBand = pickBand(_nycSalaryBands, annualIncome);
+      const locBand = pickBand(_locationBands, annualIncome);
+
+      if (!nycBand || !locBand) {
+        el.innerHTML = '';
+        return;
+      }
+
+      // Choose a random occupation/location from the band
+      const occ = Array.isArray(nycBand.occupations) && nycBand.occupations.length > 0
+        ? nycBand.occupations[Math.floor(Math.random() * nycBand.occupations.length)]
+        : (nycBand.label || 'worker');
+      const place = Array.isArray(locBand.examples) && locBand.examples.length > 0
+        ? locBand.examples[Math.floor(Math.random() * locBand.examples.length)]
+        : (locBand.label || 'many countries');
+
+      el.innerHTML = `
+        With this estimated annual income, you make about as much as a <strong>${occ}</strong> in New York.
+        You could likely live comfortably-ish in <strong>${place}</strong>.
+        <span class="disclaimer">Don't pack your bags yet, take this with a grain of salt. DYOR, NFA, etc.</span>
+      `;
+    }
+
+    // Utility functions
+    function shortAddr(addr) {
+      if (!addr || addr.length < 10) return addr || '';
+      return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    }
+
+    function formatCurrency(value) {
+      if (value === null || value === undefined) return '$0.00';
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
+    }
+
+    function formatApy(value) {
+      if (value === null || value === undefined) return 'N/A';
+      return `${(value * 100).toFixed(2)}%`;
+    }
+
+    function getApyClass(value) {
+      if (value === null || value === undefined) return 'apy-neutral';
+      return value > 0 ? 'apy-value' : 'apy-neutral';
+    }
+
+    function getApyWarningClass(value) {
+      if (value === null || value === undefined) return '';
+      const apyPercent = value * 100;
+      if (apyPercent >= 4) return '';
+      const intensity = Math.max(0, Math.min(1, apyPercent / 4));
+      return `apy-warning apy-warning-${Math.floor(intensity * 10)}`;
+    }
+
+    function formatDate(dateString) {
+      if (!dateString) return 'Never';
+      const date = new Date(dateString);
+      const now = new Date();
+      const diff = now - date;
+
+      if (diff < 60000) return 'Just now';
+      if (diff < 3600000) {
+        const minutes = Math.floor(diff / 60000);
+        return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+      }
+      if (diff < 86400000) {
+        const hours = Math.floor(diff / 3600000);
+        return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+      }
+
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "city": "New York",
+  "currency": "USD",
+  "bands": [
+    { "min": 0,     "max": 1000,  "occupations": ["Beggar"] },
+    { "min": 1000,  "max": 10000,  "occupations": ["Part‑time student worker", "Seasonal worker"] },
+    { "min": 10000, "max": 20000,  "occupations": ["Barista", "Food service worker"] },
+    { "min": 20000, "max": 30000,  "occupations": ["Retail salesperson", "Home health aide"] },
+    { "min": 30000, "max": 40000,  "occupations": ["Hairdresser", "Bartender"] },
+    { "min": 40000, "max": 50000,  "occupations": ["Receptionist", "Security guard"] },
+    { "min": 50000, "max": 60000,  "occupations": ["Administrative assistant", "Paralegal (entry)"] },
+    { "min": 60000, "max": 70000,  "occupations": ["Electrician", "Plumber"] },
+    { "min": 70000, "max": 80000,  "occupations": ["Public school teacher", "Police officer"] },
+    { "min": 80000, "max": 90000,  "occupations": ["Registered nurse", "Accountant"] },
+    { "min": 90000, "max": 100000, "occupations": ["Software engineer (entry)", "Marketing specialist"] },
+    { "min": 100000, "max": 110000, "occupations": ["Financial analyst", "UX designer"] },
+    { "min": 110000, "max": 120000, "occupations": ["Project manager", "Data analyst (mid)"] },
+    { "min": 120000, "max": 130000, "occupations": ["Product manager (associate)", "Attorney (entry)"] },
+    { "min": 130000, "max": 140000, "occupations": ["Senior software engineer", "Pharmacist"] },
+    { "min": 140000, "max": 150000, "occupations": ["Attorney (mid)", "Architect (senior)"] },
+    { "min": 150000, "max": 180000, "occupations": ["Investment banking analyst (total comp)", "Senior data scientist"] },
+    { "min": 180000, "max": 200000, "occupations": ["BigLaw associate", "Staff software engineer"] },
+    { "min": 200000, "max": 500000, "occupations": ["Physician (attending)", "VP/Director (tech/finance)"] },
+    { "min": 500000, "max": null,   "occupations": ["Top Dog"] }
+  ],
+  "note": "Bands are approximate (10k increments) and illustrative using NYC medians/market ranges circa 2023–2025."
+}
+

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Privacy Policy - Yapt</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.ico">
+</head>
+<body>
+  <div class="container" style="max-width: 800px;">
+    <div class="legal-header">
+      <a href="/" class="back-link">&larr; Back to Home</a>
+      <h1>Privacy Policy</h1>
+      <p class="updated-date">Last Updated: October 2025</p>
+    </div>
+
+    <div class="legal-content">
+      <section>
+        <h2>1. Introduction</h2>
+        <p>Yapt ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and protect your personal information when you use our stablecoin yield tracking service.</p>
+      </section>
+
+      <section>
+        <h2>2. Information We Collect</h2>
+        <h3>2.1 Account Information</h3>
+        <p>When you register for an account, we collect:</p>
+        <ul>
+          <li><strong>Username:</strong> A unique identifier you choose during registration</li>
+          <li><strong>WebAuthn credentials:</strong> Public key cryptographic credentials for passwordless authentication (stored securely, no passwords)</li>
+        </ul>
+
+        <h3>2.2 Wallet and Portfolio Data</h3>
+        <ul>
+          <li><strong>Ethereum wallet addresses:</strong> Public blockchain addresses you choose to track</li>
+          <li><strong>Position data:</strong> Information about the DeFi positions discovered from public blockchain data</li>
+          <li><strong>Historical snapshots:</strong> Time-series data of the position values and yields</li>
+        </ul>
+
+        <h3>2.3 Notification Settings (Optional)</h3>
+        <ul>
+          <li><strong>ntfy.sh topic:</strong> A randomly generated topic identifier for push notifications (if you enable notifications)</li>
+          <li><strong>Notification preferences:</strong> Your alert thresholds and preferences</li>
+        </ul>
+
+        <h3>2.4 Technical Data</h3>
+        <ul>
+          <li><strong>Session cookie:</strong> A secure, HTTP-only cookie used to maintain your login session (essential for the service to function)</li>
+          <li><strong>Server logs:</strong> Standard server logs including IP addresses, timestamps, and requested URLs (retained for security and debugging purposes)</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. How We Use Your Information</h2>
+        <p>We use your information solely to provide and improve our service:</p>
+        <ul>
+          <li><strong>Authentication:</strong> To verify your identity and maintain secure sessions</li>
+          <li><strong>Portfolio tracking:</strong> To discover and monitor DeFi positions and calculate yields</li>
+          <li><strong>Notifications:</strong> To send alerts when conditions you've configured are met (optional feature)</li>
+          <li><strong>Service improvement:</strong> To fix bugs, improve performance, and add features</li>
+        </ul>
+        <p><strong>We do not:</strong></p>
+        <ul>
+          <li>Sell your data to third parties</li>
+          <li>Use your data for advertising</li>
+          <li>Share your data except as required by law</li>
+          <li>Track you across other websites</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Cookies and Tracking</h2>
+        <p><strong>Session Cookie:</strong> We use a single, essential session cookie to keep you logged in. This cookie is:</p>
+        <ul>
+          <li>HTTP-only (not accessible to JavaScript)</li>
+          <li>Secure (transmitted only over HTTPS in production)</li>
+          <li>Session-scoped with a 30-day expiry</li>
+          <li>Required for the service to function</li>
+        </ul>
+        <p>We do not use analytics cookies, advertising cookies, or third-party tracking scripts.</p>
+      </section>
+
+      <section>
+        <h2>5. Data Storage and Security</h2>
+        <p>Your data is stored securely:</p>
+        <ul>
+          <li><strong>Encryption:</strong> All connections use HTTPS/TLS encryption</li>
+          <li><strong>Database:</strong> Data is stored in a PostgreSQL database with access controls</li>
+          <li><strong>Authentication:</strong> We use WebAuthn (passkeys) for strong, phishing-resistant authentication</li>
+        </ul>
+        <p>While we implement industry-standard security measures, no system is 100% secure. Use strong authentication methods (multiple security keys or biometric devices).</p>
+      </section>
+
+      <section>
+        <h2>6. Third-Party Services</h2>
+        <p>We interact with the following third-party services:</p>
+        <ul>
+          <li><strong>Ethereum RPC providers:</strong> We query blockchain data through RPC endpoints (e.g., Infura, Alchemy) to discover your positions. These providers may see the wallet addresses you track.</li>
+          <li><strong>CoinGecko:</strong> We fetch stablecoin prices from CoinGecko's public API (no personal data shared)</li>
+          <li><strong>ntfy.sh (optional):</strong> If you enable notifications, alerts are sent via ntfy.sh using your generated topic identifier. See <a href="https://ntfy.sh/docs/privacy/" target="_blank" rel="noopener">ntfy.sh privacy policy</a>.</li>
+        </ul>
+        <p>We do not share your username, account information, or any data beyond what's necessary for these services to function.</p>
+      </section>
+
+      <section>
+        <h2>7. Your Rights (GDPR)</h2>
+        <p>If you're in the European Union, you have the following rights under GDPR:</p>
+        <ul>
+          <li><strong>Access:</strong> Request a copy of your personal data</li>
+          <li><strong>Rectification:</strong> Correct inaccurate data</li>
+          <li><strong>Erasure:</strong> Request deletion of your account and data (contact us or use the account deletion feature if available)</li>
+          <li><strong>Portability:</strong> Export your data in a machine-readable format</li>
+          <li><strong>Objection:</strong> Object to processing of your data</li>
+          <li><strong>Restriction:</strong> Request restriction of processing</li>
+        </ul>
+        <p>To exercise these rights, contact us at the email address in the Contact section below.</p>
+      </section>
+
+      <section>
+        <h2>8. Data Retention</h2>
+        <ul>
+          <li><strong>Account data:</strong> Retained for as long as your account is active</li>
+          <li><strong>Position data:</strong> Retained for as long as you track a wallet</li>
+          <li><strong>Session cookies:</strong> Expire after 30 days or when you log out</li>
+          <li><strong>Server logs:</strong> Retained for up to 90 days for security and debugging</li>
+        </ul>
+        <p>When you delete your account, all associated data is permanently deleted from our database.</p>
+      </section>
+
+      <section>
+        <h2>9. Children's Privacy</h2>
+        <p>Yapt is not intended for users under 18 years of age. We do not knowingly collect personal information from children. If you believe a child has provided us with personal data, please contact us.</p>
+      </section>
+
+      <section>
+        <h2>10. Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated "Last Updated" date. Continued use of the service after changes constitutes acceptance of the updated policy.</p>
+      </section>
+
+      <section>
+        <h2>11. Contact</h2>
+        <p>For questions, concerns, or to exercise your privacy rights, please contact us:</p>
+        <p>X: <strong><a href="https://x.com/Yapt_fi">X</a></strong></p>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

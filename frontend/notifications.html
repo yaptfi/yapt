@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Notification Settings - Yapt</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.ico">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <script src="/config.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <div id="header-placeholder"></div>
+
+  <div class="container">
+
+    <main>
+      <!-- Loading State -->
+      <div id="loadingScreen" style="text-align: center; padding: 40px;">
+        <div class="spinner"></div>
+        <p>Loading settings...</p>
+      </div>
+
+      <!-- Settings Form -->
+      <section class="card" id="settingsForm" style="display: none;">
+        <h2>Push Notifications</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+          Get instant alerts via <a href="https://ntfy.sh" target="_blank" style="color: var(--primary);">ntfy.sh</a> when important events occur.
+          Download the ntfy app on your phone and subscribe to your topic to receive notifications.
+        </p>
+
+        <!-- Ntfy Topic Display -->
+        <div class="form-section">
+          <h3>Your Notification Topic</h3>
+          <div class="topic-display" id="topicDisplay" style="display: none;">
+            <p style="margin-bottom: 1rem; color: var(--text-secondary);">
+              Subscribe to this topic in the ntfy app to receive notifications:
+            </p>
+            <div id="ntfyTopicBox" style="
+              background: var(--bg-secondary);
+              padding: 1rem;
+              border-radius: 8px;
+              font-family: monospace;
+              font-size: 1.1em;
+              text-align: center;
+              margin-bottom: 1rem;
+            ">
+              <strong id="ntfyTopic">-</strong>
+            </div>
+            <p style="color: var(--text-dim); font-size: 0.9em;">
+              <strong>How to use:</strong><br>
+              1. Install ntfy app from <a href="https://ntfy.sh" target="_blank" style="color: var(--primary);">ntfy.sh</a><br>
+              2. Subscribe to the topic shown above<br>
+              3. Enable notifications below to start receiving alerts
+            </p>
+          </div>
+        </div>
+
+        <form id="notificationForm" onsubmit="saveSettings(event)">
+          <!-- Stablecoin Depeg Alerts -->
+          <div class="form-section">
+            <h3>Stablecoin Depeg Alerts</h3>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="depegEnabled">
+                <span>Enable depeg notifications</span>
+              </label>
+            </div>
+
+            <div id="depegSettings" class="settings-group" style="display: none;">
+              <div class="form-group">
+                <label>Stablecoins (optional)</label>
+                <div id="depegCoins" style="display:flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+                <p class="form-help">If none selected, alerts apply to all supported stablecoins.</p>
+              </div>
+
+              <div class="form-group">
+                <label for="depegSeverity">Notification Priority</label>
+                <select id="depegSeverity">
+                  <option value="min">Min - No vibration/sound, under fold</option>
+                  <option value="low">Low - No vibration/sound, drawer only</option>
+                  <option value="default" selected>Default - Short vibration/sound</option>
+                  <option value="high">High - Long vibration, pop-over</option>
+                  <option value="urgent">Urgent - Very long vibration, pop-over</option>
+                </select>
+                <p class="form-help">Controls notification behavior and sound</p>
+              </div>
+
+              <div class="form-group">
+                <label for="depegLowerThreshold">Alert when price drops below (USD)</label>
+                <input
+                  type="number"
+                  id="depegLowerThreshold"
+                  step="0.0001"
+                  min="0"
+                  max="2"
+                  placeholder="0.99"
+                  value="0.99"
+                >
+                <p class="form-help">Get notified when stablecoins trade below this price</p>
+              </div>
+
+              <div class="form-group">
+                <label for="depegUpperThreshold">Alert when price rises above (USD) - optional</label>
+                <input
+                  type="number"
+                  id="depegUpperThreshold"
+                  step="0.0001"
+                  min="0"
+                  max="2"
+                  placeholder="Leave empty for no upper limit"
+                >
+                <p class="form-help">Leave empty to disable upper threshold alerts</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- APY Drop Alerts -->
+          <div class="form-section">
+            <h3>APY Drop Alerts</h3>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="apyEnabled">
+                <span>Enable APY drop notifications</span>
+              </label>
+            </div>
+
+            <div id="apySettings" class="settings-group" style="display: none;">
+              <div class="form-group">
+                <label for="apySeverity">Notification Priority</label>
+                <select id="apySeverity">
+                  <option value="min">Min - No vibration/sound, under fold</option>
+                  <option value="low">Low - No vibration/sound, drawer only</option>
+                  <option value="default" selected>Default - Short vibration/sound</option>
+                  <option value="high">High - Long vibration, pop-over</option>
+                  <option value="urgent">Urgent - Very long vibration, pop-over</option>
+                </select>
+                <p class="form-help">Controls notification behavior and sound</p>
+              </div>
+
+              <div class="form-group">
+                <label for="apyThreshold">Alert when 4h APY drops below (%)</label>
+                <input
+                  type="number"
+                  id="apyThreshold"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  placeholder="1"
+                  value="1"
+                >
+                <p class="form-help">Get notified when position's 4-hour APY falls below this percentage</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="saveBtn">
+              Save Settings
+            </button>
+          </div>
+
+          <div id="statusMessage" class="status-message"></div>
+        </form>
+      </section>
+
+      <!-- Notification History -->
+      <section class="card" id="historySection" style="display: none;">
+        <h2>Notification History</h2>
+        <div id="notificationHistory">
+          <p class="empty-state">No notifications sent yet</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p><a href="/dashboard.html">Back to Dashboard</a></p>
+    </footer>
+  </div>
+
+  <script src="/components/header.js"></script>
+  <script src="/notifications.js"></script>
+</body>
+</html>

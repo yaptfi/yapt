@@ -1,0 +1,54 @@
+name: Deploy to Local Server
+
+on:
+  push:
+    branches: [main]
+
+env:
+  # Change this to your actual deployment directory
+  DEPLOY_DIR: /home/mano/yapt
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Pull latest code in deployment directory
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Stop existing containers
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+        continue-on-error: true
+
+      - name: Build Docker images
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+
+      - name: Deploy containers
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+      - name: Run migrations
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrations
+
+      - name: Wait for services
+        run: sleep 5
+
+      - name: Health check
+        run: |
+          curl -fsS -k https://localhost:3443/health || exit 1
+
+      - name: Show status
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+          echo "✅ Deployment completed to ${{ env.DEPLOY_DIR }}"

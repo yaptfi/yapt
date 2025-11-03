@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Yapt</title>
+  <link rel="stylesheet" href="/styles.css">
+  <!-- Favicon / App Icon -->
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.ico">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <script src="https://unpkg.com/@simplewebauthn/browser@10.0.0/dist/bundle/index.umd.min.js"></script>
+  <script src="/config.js"></script>
+</head>
+<body>
+  <!-- Authentication Screen -->
+  <div id="authScreen" class="auth-screen" style="display: none;">
+    <div class="auth-container">
+      <div id="auth-forms-placeholder"></div>
+    </div>
+  </div>
+
+  <script src="/auth.js"></script>
+  <script>
+    // Load auth forms component
+    (async function() {
+      const placeholder = document.getElementById('auth-forms-placeholder');
+      if (!placeholder) return;
+
+      try {
+        const response = await fetch('/components/auth-forms.html');
+        const html = await response.text();
+        placeholder.innerHTML = html;
+
+        // Add "or view as guest" link with dynamic guest link
+        const extraSpan = placeholder.querySelector('.auth-footer-extra');
+        if (extraSpan) {
+          extraSpan.innerHTML = ' or <a id="guestLink" href="/guest.html">View as guest</a>';
+        }
+      } catch (error) {
+        console.error('Failed to load auth forms:', error);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "currency": "USD",
+  "bands": [
+    { "min": 0,      "max": 1000,   "examples": ["your dreams"], "label": "Too poor" },
+    { "min": 1000,   "max": 10000,  "examples": ["Bangladesh", "Nepal", "Ethiopia"], "label": "Lower‑income countries" },
+    { "min": 10000,  "max": 20000,  "examples": ["India", "Vietnam", "Philippines", "Morocco"], "label": "Emerging economies" },
+    { "min": 20000,  "max": 30000,  "examples": ["Indonesia", "Peru", "Ukraine", "Egypt"], "label": "Emerging economies" },
+    { "min": 30000,  "max": 40000,  "examples": ["Brazil", "Mexico", "Thailand", "Turkey"], "label": "Middle‑income countries" },
+    { "min": 40000,  "max": 50000,  "examples": ["Poland", "Portugal", "Chile", "Hungary"], "label": "Upper‑middle income" },
+    { "min": 50000,  "max": 60000,  "examples": ["Spain", "Czechia", "Estonia", "Lithuania"], "label": "Upper‑middle/High income" },
+    { "min": 60000,  "max": 70000,  "examples": ["Italy", "South Korea", "Slovenia"], "label": "High income" },
+    { "min": 70000,  "max": 80000,  "examples": ["France", "United Kingdom", "Japan"], "label": "High income" },
+    { "min": 80000,  "max": 90000,  "examples": ["Germany", "New Zealand"], "label": "High income" },
+    { "min": 90000,  "max": 100000, "examples": ["Canada", "Finland"], "label": "High income" },
+    { "min": 100000, "max": 110000, "examples": ["Singapore", "Sweden", "Netherlands"], "label": "High income" },
+    { "min": 110000, "max": 120000, "examples": ["Denmark", "Austria"], "label": "High income" },
+    { "min": 120000, "max": 140000, "examples": ["Australia", "Norway"], "label": "Very high income" },
+    { "min": 140000, "max": 200000, "examples": ["Switzerland", "Luxembourg", "United States (major cities)"] , "label": "Very high income"},
+    { "min": 200000, "max": null,   "examples": ["wherever you like"] , "label": "Top dog"}
+  ],
+  "note": "Bands use broad national average income proxies (nominal) and serve as illustrative cost‑of‑living anchors; individual cities can differ substantially."
+}
+
