@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Yapt - Supported Protocols</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.ico">
+  <script src="/config.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <div id="header-placeholder"></div>
+
+  <main class="container">
+    <section class="card">
+      <div class="card-header">
+        <h2>Supported Protocols</h2>
+      </div>
+      <p class="form-help">This list is generated from the backend configuration. When new protocols are added, they appear here automatically.</p>
+    </section>
+
+    <section id="protocolsContainer"></section>
+
+    <section class="card" id="errorSection" style="display:none;">
+      <h2>Unable to load protocols</h2>
+      <p class="form-help">Please try again later.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Yapt - Track Your Stablecoin Yields</p>
+  </footer>
+
+  <script src="/components/header.js"></script>
+  <script>
+    (async function() {
+      const API_BASE = (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.apiBase)
+        ? window.APP_CONFIG.apiBase
+        : '/api';
+
+      const container = document.getElementById('protocolsContainer');
+      const errorSection = document.getElementById('errorSection');
+
+      function titleCase(s) {
+        return s.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      }
+
+      function render(protocols) {
+        // Group by family (derived from key prefix)
+        const groups = new Map();
+        for (const p of protocols) {
+          const familyId = p.family || (p.key.split('-')[0] || 'other');
+          if (!groups.has(familyId)) groups.set(familyId, []);
+          groups.get(familyId).push(p);
+        }
+
+        const fragments = document.createDocumentFragment();
+
+        Array.from(groups.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .forEach(([familyId, items]) => {
+            const section = document.createElement('section');
+            section.className = 'card';
+
+            const header = document.createElement('div');
+            header.className = 'card-header';
+            const h2 = document.createElement('h2');
+            h2.textContent = titleCase(familyId);
+            header.appendChild(h2);
+            section.appendChild(header);
+
+            const list = document.createElement('div');
+            list.style.display = 'flex';
+            list.style.flexDirection = 'column';
+            list.style.gap = '0.75rem';
+
+            items
+              .sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key))
+              .forEach(item => {
+                const row = document.createElement('div');
+                row.style.border = '1px solid var(--border)';
+                row.style.borderRadius = '8px';
+                row.style.padding = '1rem';
+                row.style.background = 'var(--bg)';
+
+                const name = document.createElement('div');
+                name.className = 'position-name';
+                name.textContent = item.name || item.key;
+                row.appendChild(name);
+
+                const meta = document.createElement('div');
+                meta.className = 'position-asset';
+                const parts = [];
+
+                if (item.type) parts.push(`Type: ${item.type}`);
+
+                // Special casing for common shapes to show useful details
+                if (Array.isArray(item.markets)) {
+                  const assets = item.markets.map(m => m.asset).join(', ');
+                  parts.push(`Markets: ${assets}`);
+                } else if (item.currency0Symbol && item.currency1Symbol) {
+                  parts.push(`Pair: ${item.currency0Symbol}/${item.currency1Symbol}`);
+                  if (typeof item.fee === 'number') parts.push(`Fee: ${item.fee}`);
+                } else if (item.baseAsset) {
+                  parts.push(`Base: ${item.baseAsset}`);
+                }
+
+                meta.textContent = parts.join(' • ');
+                row.appendChild(meta);
+
+                list.appendChild(row);
+              });
+
+            section.appendChild(list);
+            fragments.appendChild(section);
+          });
+
+        container.innerHTML = '';
+        container.appendChild(fragments);
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/protocols`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data || !Array.isArray(data.protocols)) throw new Error('Malformed response');
+        render(data.protocols);
+      } catch (err) {
+        console.error('Failed to load protocols:', err);
+        errorSection.style.display = 'block';
+      }
+    })();
+  </script>
+  
+</body>
+</html>
+

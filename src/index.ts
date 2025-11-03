@@ -22,6 +22,7 @@ import adminRoutes from './routes/admin';
 import guestRoutes from './routes/guest';
 import notificationRoutes from './routes/notifications';
 import stablecoinsRoutes from './routes/stablecoins';
+import protocolsRoutes from './routes/protocols';
 
 const PORT = parseInt(getEnvVar('PORT', '3000'));
 const SESSION_SECRET = getEnvVar('SESSION_SECRET');
@@ -256,6 +257,7 @@ async function start() {
     await server.register(guestRoutes, { prefix: '/api/guest' });
     await server.register(notificationRoutes, { prefix: '/api/notifications' });
     await server.register(stablecoinsRoutes, { prefix: '/api/stablecoins' });
+    await server.register(protocolsRoutes, { prefix: '/api/protocols' });
 
     // Health check
     server.get('/health', async () => {
