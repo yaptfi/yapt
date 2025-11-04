@@ -34,8 +34,10 @@ const HTTPS_CERT = getEnvVar('HTTPS_CERT', '');
 const HTTPS_KEY = getEnvVar('HTTPS_KEY', '');
 
 // Fastify server options
+const LOG_LEVEL = getEnvVar('LOG_LEVEL', process.env.NODE_ENV === 'production' ? 'warn' : 'info');
 const serverOptions: any = {
   logger: {
+    level: LOG_LEVEL,
     transport: {
       target: 'pino-pretty',
       options: {
