@@ -356,18 +356,25 @@ export async function getPositionMetrics(positionId: string, position?: Position
     return { apy: r.apy, windowHours };
   }
 
-  // Two‑point APYs: 4h ("recent"), 7d, 30d — each compares latest vs nearest snapshot to target
-  const result4h = await computeApyBetween(latestSnapshot, 4 * 60 * 60 * 1000, 59);
-  const result7d = await computeApyBetween(latestSnapshot, 7 * 24 * 60 * 60 * 1000, 59);
-  const result30d = await computeApyBetween(latestSnapshot, 30 * 24 * 60 * 60 * 1000, 59);
+  // Skip APY calculations for reward-based positions (they use absolute yield metrics instead)
+  let apy = null;
+  let apy7d = null;
+  let apy30d = null;
 
-  // Time-based visibility rules:
-  // - Always show 4h APY (no restrictions)
-  // - Only show 7d APY if we have more than 1 day (24 hours) of data
-  // - Only show 30d APY if we have more than 10 days (240 hours) of data
-  const apy = result4h?.apy ?? null;
-  const apy7d = (result7d && result7d.windowHours > 24) ? result7d.apy : null;
-  const apy30d = (result30d && result30d.windowHours > 240) ? result30d.apy : null;
+  if (!isRewardBased) {
+    // Two‑point APYs: 4h ("recent"), 7d, 30d — each compares latest vs nearest snapshot to target
+    const result4h = await computeApyBetween(latestSnapshot, 4 * 60 * 60 * 1000, 59);
+    const result7d = await computeApyBetween(latestSnapshot, 7 * 24 * 60 * 60 * 1000, 59);
+    const result30d = await computeApyBetween(latestSnapshot, 30 * 24 * 60 * 60 * 1000, 59);
+
+    // Time-based visibility rules:
+    // - Always show 4h APY (no restrictions)
+    // - Only show 7d APY if we have more than 1 day (24 hours) of data
+    // - Only show 30d APY if we have more than 10 days (240 hours) of data
+    apy = result4h?.apy ?? null;
+    apy7d = (result7d && result7d.windowHours > 24) ? result7d.apy : null;
+    apy30d = (result30d && result30d.windowHours > 240) ? result30d.apy : null;
+  }
 
   return {
     valueUsd: parseFloat(latestSnapshot.value_usd),
