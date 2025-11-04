@@ -305,7 +305,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
     latest: PositionSnapshot,
     targetAgoMs: number,
     minAgeMinutes = 59
-  ): Promise<number | null> {
+  ): Promise<{ apy: number; windowHours: number } | null> {
     const nowTs = new Date(latest.ts).getTime();
     const targetTime = new Date(nowTs - targetAgoMs);
     // Nearest snapshot to the target time
@@ -352,29 +352,21 @@ export async function getPositionMetrics(positionId: string, position?: Position
     }
 
     const r = computeApy(curValue, refValue, flows, windowHours);
-    return r.apy;
+    return { apy: r.apy, windowHours };
   }
 
   // Two‑point APYs: 4h ("recent"), 7d, 30d — each compares latest vs nearest snapshot to target
-  const apy4h = await computeApyBetween(latestSnapshot, 4 * 60 * 60 * 1000, 59);
-  const apy7dRaw = await computeApyBetween(latestSnapshot, 7 * 24 * 60 * 60 * 1000, 59);
-  const apy30dRaw = await computeApyBetween(latestSnapshot, 30 * 24 * 60 * 60 * 1000, 59);
+  const result4h = await computeApyBetween(latestSnapshot, 4 * 60 * 60 * 1000, 59);
+  const result7d = await computeApyBetween(latestSnapshot, 7 * 24 * 60 * 60 * 1000, 59);
+  const result30d = await computeApyBetween(latestSnapshot, 30 * 24 * 60 * 60 * 1000, 59);
 
-  // Hide redundant values: 7d only if different from 4h (rounded to 2 decimals in percent)
-  // 30d only if different from displayed 7d (or 4h if 7d hidden)
-  const sameRounded = (a: number | null, b: number | null) => {
-    if (a == null || b == null) return false;
-    const pa = +(a * 100).toFixed(2);
-    const pb = +(b * 100).toFixed(2);
-    return pa === pb;
-  };
-
-  const apy = apy4h ?? null;
-  let apy7d: number | null = apy7dRaw ?? null;
-  if (sameRounded(apy7d, apy)) apy7d = null;
-  let apy30d: number | null = apy30dRaw ?? null;
-  const compareBasis = apy7d ?? apy;
-  if (sameRounded(apy30d, compareBasis)) apy30d = null;
+  // Time-based visibility rules:
+  // - Always show 4h APY (no restrictions)
+  // - Only show 7d APY if we have more than 1 day (24 hours) of data
+  // - Only show 30d APY if we have more than 10 days (240 hours) of data
+  const apy = result4h?.apy ?? null;
+  const apy7d = (result7d && result7d.windowHours > 24) ? result7d.apy : null;
+  const apy30d = (result30d && result30d.windowHours > 240) ? result30d.apy : null;
 
   return {
     valueUsd: parseFloat(latestSnapshot.value_usd),
