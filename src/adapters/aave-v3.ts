@@ -50,25 +50,32 @@ export class AaveV3Adapter extends BaseProtocolAdapter {
             const decoded = contract.interface.decodeFunctionResult('balanceOf', r.returnData);
             const bal: bigint = BigInt(decoded[0].toString());
             balances.set(aToken.toLowerCase(), bal);
-          } catch {
-            balances.set(aToken.toLowerCase(), 0n);
+          } catch (error) {
+            // Decoding failure is a critical error - throw instead of returning 0
+            console.error(`Failed to decode balance for ${aToken}:`, error);
+            throw new Error(`RPC decode error for ${aToken}: ${error}`);
           }
         } else {
-          balances.set(aToken.toLowerCase(), 0n);
+          // RPC call failed - this is a critical error, not a zero balance
+          console.error(`RPC call failed for ${aToken}, success=${r?.success}, returnData=${r?.returnData}`);
+          throw new Error(`RPC call failed for ${aToken}`);
         }
       }
       this.walletBalanceCache.set(wallet, balances);
       this.walletBalanceCacheTs.set(wallet, Date.now());
       return balances;
-    } catch {
+    } catch (multicallError) {
       // Fallback to sequential calls if multicall unavailable
+      console.warn('Multicall failed, falling back to sequential calls:', multicallError);
       for (const market of config.markets) {
         try {
           const aToken = getContract(market.aToken, erc20Abi);
           const bal: bigint = await aToken.balanceOf(wallet);
           balances.set(market.aToken.toLowerCase(), bal);
-        } catch {
-          balances.set(market.aToken.toLowerCase(), 0n);
+        } catch (error) {
+          // RPC failure is critical - throw instead of returning 0
+          console.error(`Sequential RPC call failed for ${market.aToken}:`, error);
+          throw new Error(`RPC call failed for ${market.aToken}: ${error}`);
         }
       }
       this.walletBalanceCache.set(wallet, balances);

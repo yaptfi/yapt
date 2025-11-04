@@ -88,9 +88,10 @@ export async function updatePosition(position: Position): Promise<void> {
         return;
       }
 
-      // Principal positions: RPC successfully returned zero balance -> archive immediately
-      // (If RPC had failed, it would have thrown an error caught by try-catch above)
-      console.log(`  Complete exit detected (verified zero balance) - archiving position`);
+      // Principal positions: RPC successfully returned zero balance -> archive
+      // If RPC had failed, it would have thrown an error caught by try-catch below
+      const previousValue = parseFloat(latestSnapshot.value_usd);
+      console.log(`  Complete exit detected (verified zero balance, previous: $${previousValue.toFixed(2)}) - archiving position`);
       await archivePosition(position.id, 'complete_exit');
       return;
     }

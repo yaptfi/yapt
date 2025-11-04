@@ -339,6 +339,25 @@ npm test -- apy.test.ts
 
 8. **BAD_DATA Errors**: When contract calls return empty data (`0x`), catch and handle gracefully instead of crashing discovery. This happens when contracts don't exist at configured addresses or don't implement expected interfaces.
 
+9. **CRITICAL - RPC Error Handling in Adapters**: Never catch RPC errors and silently return 0. RPC failures must throw exceptions, not return zero balances. The `updatePosition` logic relies on errors being thrown to skip updates rather than archiving positions. **Example of dangerous pattern:**
+```typescript
+// ❌ WRONG - silently returns 0 on RPC failure
+try {
+  balance = await contract.balanceOf(wallet);
+} catch {
+  balance = 0n; // This will cause positions to be archived on RPC errors!
+}
+
+// ✅ CORRECT - let errors propagate
+try {
+  balance = await contract.balanceOf(wallet);
+} catch (error) {
+  console.error(`RPC call failed for ${contract.address}:`, error);
+  throw new Error(`RPC call failed: ${error}`); // Throw, don't return 0!
+}
+```
+**How it works**: When an adapter throws an error, `updatePosition`'s try-catch (line 146) catches it and logs the failure. The position remains active and will be retried on the next update cycle. When an adapter successfully returns 0, the position is archived as a legitimate exit.
+
 ## Protocol-Specific Notes
 
 ### Aave v3
