@@ -1665,11 +1665,11 @@ header {
   }
 
   .hero-left {
-    order: 2;
+    order: 1;
   }
 
   .hero-right {
-    order: 1;
+    order: 2;
     min-height: auto;
   }
 
