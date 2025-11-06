@@ -170,8 +170,8 @@ export async function multicallTryAggregate(
 ): Promise<Array<{ success: boolean; returnData: string }>> {
   await rpcThrottle();
   const multicall = getMulticallContract();
-  // payable function; send 0 value
-  const results = await (multicall as any).tryAggregate(requireSuccess, calls, { value: 0 });
+  // tryAggregate is a view function, use staticCall explicitly
+  const results = await multicall.tryAggregate.staticCall(requireSuccess, calls);
   // Normalize to simple JSON types
   return results.map((r: any) => ({ success: Boolean(r.success), returnData: r.returnData as string }));
 }
