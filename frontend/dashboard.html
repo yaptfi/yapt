@@ -84,28 +84,49 @@
         </div>
       </div>
 
-      <section class="card portfolio-summary" id="portfolioSummary" style="display: none;">
-        <h2>Portfolio Summary</h2>
-        <div class="summary-grid">
-          <div class="summary-item clickable" onclick="showHistoryChart()">
-            <span class="label">Total Value</span>
-            <span class="value" id="totalValue">$0.00</span>
+      <section id="portfolioSummary" style="display: none;">
+        <h2 style="margin-bottom: 1.5rem;">Portfolio Summary</h2>
+
+        <!-- Total Portfolio Value Card -->
+        <div class="portfolio-card clickable" onclick="showHistoryChart()">
+          <span class="portfolio-label">TOTAL PORTFOLIO VALUE</span>
+          <span class="portfolio-value" id="totalValue">$0.00</span>
+        </div>
+
+        <!-- Estimated Income Section -->
+        <h3 style="margin-top: 2rem; margin-bottom: 1rem; font-size: 1.25rem; color: var(--text);">Estimated Income</h3>
+        <div class="income-grid">
+          <div class="income-card">
+            <span class="income-label">DAILY</span>
+            <span class="income-value" id="dailyIncome">$0.00</span>
+            <span class="income-actual" id="dailyActual">Last 24H: +$0</span>
           </div>
-          <div class="summary-item">
-            <span class="label">Est. Daily Income</span>
-            <span class="value" id="dailyIncome">$0.00</span>
+          <div class="income-card">
+            <span class="income-label">MONTHLY</span>
+            <span class="income-value" id="monthlyIncome">$0.00</span>
+            <span class="income-actual" id="monthlyActual">Last 7D: +$0</span>
           </div>
-          <div class="summary-item">
-            <span class="label">Est. Monthly Income</span>
-            <span class="value" id="monthlyIncome">$0.00</span>
-          </div>
-          <div class="summary-item">
-            <span class="label">Est. Yearly Income</span>
-            <span class="value" id="yearlyIncome">$0.00</span>
+          <div class="income-card">
+            <span class="income-label">YEARLY</span>
+            <span class="income-value" id="yearlyIncome">$0.00</span>
+            <span class="income-actual" id="yearlyActual">Last 30D: +$0</span>
           </div>
         </div>
-        <div id="incomeContext" class="income-context" aria-live="polite"></div>
-        <div class="stablecoin-prices" id="stablecoinPrices"></div>
+
+        <!-- Income Context Card -->
+        <div class="portfolio-card income-context-card">
+          <div id="incomeContext" class="income-context" aria-live="polite"></div>
+        </div>
+
+        <!-- Exchange Rates Card -->
+        <div class="portfolio-card">
+          <div class="rates-header">
+            <span class="rates-title">EXCHANGE RATES</span>
+            <span class="rates-source">Rates from Coingecko</span>
+          </div>
+          <div class="stablecoin-prices" id="stablecoinPrices"></div>
+        </div>
+
         <div class="summary-footer">
           <span class="updated-time" id="lastUpdated">Last updated: Never</span>
         </div>

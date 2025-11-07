@@ -11,6 +11,7 @@ import { getPositionMetrics } from '../services/update';
 import { CountingMode } from '../types';
 import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
 import { requireAuth } from '../middleware/auth';
+import { query } from '../utils/db';
 
 interface UpdatePositionBody {
   countingMode?: CountingMode;
@@ -103,7 +104,63 @@ export default async function positionRoutes(server: FastifyInstance) {
         })
       );
 
-      return reply.send({ positions: enrichedPositions });
+      // Calculate actual yields from snapshots for different time periods
+      let actual24hYield = 0;
+      let actual7dYield = 0;
+      let actual30dYield = 0;
+
+      if (userWalletIds.length > 0) {
+        // 24 hours actual yield
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const result24h = await query<{ total_yield: string }>(
+          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
+           FROM position_snapshot ps
+           JOIN position p ON ps.position_id = p.id
+           WHERE p.wallet_id = ANY($1::uuid[])
+             AND p.is_active = true
+             AND p.counting_mode IN ('count', 'partial')
+             AND ps.ts >= $2`,
+          [userWalletIds, twentyFourHoursAgo]
+        );
+        actual24hYield = result24h.length > 0 ? parseFloat(result24h[0].total_yield) : 0;
+
+        // 7 days actual yield
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const result7d = await query<{ total_yield: string }>(
+          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
+           FROM position_snapshot ps
+           JOIN position p ON ps.position_id = p.id
+           WHERE p.wallet_id = ANY($1::uuid[])
+             AND p.is_active = true
+             AND p.counting_mode IN ('count', 'partial')
+             AND ps.ts >= $2`,
+          [userWalletIds, sevenDaysAgo]
+        );
+        actual7dYield = result7d.length > 0 ? parseFloat(result7d[0].total_yield) : 0;
+
+        // 30 days actual yield
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const result30d = await query<{ total_yield: string }>(
+          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
+           FROM position_snapshot ps
+           JOIN position p ON ps.position_id = p.id
+           WHERE p.wallet_id = ANY($1::uuid[])
+             AND p.is_active = true
+             AND p.counting_mode IN ('count', 'partial')
+             AND ps.ts >= $2`,
+          [userWalletIds, thirtyDaysAgo]
+        );
+        actual30dYield = result30d.length > 0 ? parseFloat(result30d[0].total_yield) : 0;
+      }
+
+      return reply.send({
+        positions: enrichedPositions,
+        summary: {
+          actual24hYield,
+          actual7dYield,
+          actual30dYield,
+        },
+      });
     } catch (error) {
       server.log.error(error);
       return reply.code(500).send({ error: 'Failed to fetch positions' });

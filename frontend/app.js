@@ -419,6 +419,11 @@ function closeRescanModal() {
   modal.style.display = 'none';
 }
 
+// Global variables to store actual yields
+let actual24hYield = 0;
+let actual7dYield = 0;
+let actual30dYield = 0;
+
 // Load Positions
 async function loadPositions() {
   const container = document.getElementById('positionsTable');
@@ -434,6 +439,13 @@ async function loadPositions() {
 
     const data = await response.json();
     let positions = data.positions || [];
+
+    // Store actual yields from summary for use in portfolio summary
+    if (data.summary) {
+      actual24hYield = data.summary.actual24hYield || 0;
+      actual7dYield = data.summary.actual7dYield || 0;
+      actual30dYield = data.summary.actual30dYield || 0;
+    }
 
     // Filter positions based on selected wallets
     // When no wallets are selected, filter returns empty array (correct behavior)
@@ -516,9 +528,16 @@ async function loadPortfolioSummary() {
     }, null);
 
     document.getElementById('totalValue').textContent = formatCurrency(totalValueUsd);
+
+    // Update income estimates with actual yields displayed below
     document.getElementById('dailyIncome').textContent = formatCurrency(estDailyUsd);
+    document.getElementById('dailyActual').textContent = `Last 24H: +${formatCurrency(actual24hYield)}`;
+
     document.getElementById('monthlyIncome').textContent = formatCurrency(estMonthlyUsd);
+    document.getElementById('monthlyActual').textContent = `Last 7D: +${formatCurrency(actual7dYield)}`;
+
     document.getElementById('yearlyIncome').textContent = formatCurrency(estYearlyUsd);
+    document.getElementById('yearlyActual').textContent = `Last 30D: +${formatCurrency(actual30dYield)}`;
     // Render income context based on estimated annual income
     renderIncomeContext(estYearlyUsd);
     document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
@@ -577,12 +596,6 @@ async function loadStablecoinPrices() {
       });
 
     if (priceElements.length > 0) {
-      // Add "Rates from Coingecko" at the end
-      priceElements.push(`
-        <span style="color: var(--text-dim); font-size: 0.875rem; margin-left: 0.5rem;">
-          Rates from Coingecko
-        </span>
-      `);
       container.innerHTML = priceElements.join('');
     } else {
       container.innerHTML = '<span style="color: var(--text-dim); font-size: 0.875rem;">Stablecoin prices unavailable</span>';

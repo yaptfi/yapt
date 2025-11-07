@@ -115,58 +115,106 @@ header h1 {
   margin: 0;
 }
 
-/* Portfolio Summary */
-.portfolio-summary {
-  background: linear-gradient(135deg, var(--surface) 0%, #1e3a5f 100%);
-  border: 1px solid var(--primary);
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
+/* Portfolio Cards */
+.portfolio-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 2rem;
   margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
 }
 
-.summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.summary-item .label {
+.portfolio-label {
+  display: block;
   color: var(--text-dim);
   font-size: 0.875rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  font-weight: 600;
+  margin-bottom: 1rem;
 }
 
-.summary-item .value {
-  font-size: 1.75rem;
+.portfolio-value {
+  display: block;
+  font-size: 3rem;
   font-weight: 700;
   color: var(--success);
 }
 
-.stablecoin-prices {
+.income-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.income-card {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding: 1rem 0;
-  margin-top: 1rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.875rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.income-label {
   color: var(--text-dim);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.income-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.income-actual {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.rates-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.rates-title {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.rates-source {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+}
+
+.stablecoin-prices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  font-size: 0.875rem;
 }
 
 .stablecoin-price {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: 0.25rem;
 }
 
 .stablecoin-symbol {
   font-weight: 600;
   color: var(--text);
+  font-size: 0.875rem;
 }
 
 .stablecoin-value {
@@ -174,6 +222,7 @@ header h1 {
   color: var(--text-dim);
   text-decoration: none;
   transition: color 0.2s;
+  font-size: 0.875rem;
 }
 
 .stablecoin-value:hover {
@@ -506,24 +555,26 @@ tbody tr.apy-warning:hover {
   font-style: italic;
 }
 
-/* Income context section below summary grid */
+/* Income context section */
+.income-context-card {
+  margin-top: 1.5rem;
+}
+
 .income-context {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px dashed var(--border);
-  color: var(--text-dim);
-  font-size: 0.95rem;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
 .income-context strong {
-  color: var(--text);
+  color: var(--success);
 }
 
 .income-context .disclaimer {
   display: block;
-  margin-top: 0.35rem;
-  font-size: 0.8rem;
-  color: var(--secondary);
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-dim);
 }
 
 /* Footer */
@@ -726,8 +777,12 @@ footer {
     font-size: 1.75rem;
   }
 
-  .summary-grid {
+  .income-grid {
     grid-template-columns: 1fr;
+  }
+
+  .stablecoin-prices {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .form-group {
