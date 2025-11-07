@@ -253,7 +253,7 @@ export class RPCManager {
       }
     }
 
-    if (bestProvider && shortestWait < 5000) { // Max wait 5 seconds
+    if (bestProvider && shortestWait < 30000) { // Max wait 30 seconds (allows token bucket refill during high load)
       await new Promise(resolve => setTimeout(resolve, shortestWait));
       bestProvider.tokenBucket.tryConsume();
       return bestProvider;
