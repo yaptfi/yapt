@@ -37,6 +37,8 @@ Thumbs.db
 # Testing
 coverage/
 .nyc_output/
+tests/screenshots/
+test-results/
 
 # Temporary files
 tmp/
