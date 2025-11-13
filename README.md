@@ -19,32 +19,59 @@ Focus on stable yield. Skip the volatile crypto bags.
 
 ## Quick Start
 
+### Prerequisites
+
+- **Docker** and **Docker Compose** installed
+- **Node.js 20+** and **npm** (for running migrations from host)
+
 ### Using Docker (Recommended)
 
 1. **Setup environment**:
    ```bash
    cp .env.example .env
-   # Edit .env and add your ETH_RPC_URL and SESSION_SECRET
    ```
 
-2. **Start services**:
+2. **Edit `.env` file** and configure these required variables:
+   ```bash
+   # Generate a secure session secret
+   SESSION_SECRET=$(openssl rand -base64 32)
+
+   # Add your Ethereum RPC URL (required)
+   ETH_RPC_URL=https://mainnet.infura.io/v3/YOUR_API_KEY
+
+   # Database credentials (defaults work, but you can change them)
+   POSTGRES_USER=defi_user
+   POSTGRES_PASSWORD=defi_password
+   POSTGRES_DB=defi_tracker
+   DATABASE_URL=postgresql://defi_user:defi_password@localhost:5432/defi_tracker
+   ```
+
+   **Important**: Replace `YOUR_API_KEY` with your actual Infura/Alchemy API key.
+
+3. **Install dependencies** (for running migrations):
+   ```bash
+   npm install
+   ```
+
+4. **Start services**:
    ```bash
    docker compose up -d
    ```
 
-3. **Run migrations** (from host machine):
+5. **Run migrations** (from host machine):
    ```bash
+   # Using the DATABASE_URL from your .env file
    DATABASE_URL=postgresql://defi_user:defi_password@localhost:5432/defi_tracker npm run migrate
    ```
 
-4. **Access the app**:
+   **Note**: If you changed database credentials in step 2, update this command accordingly.
+
+6. **Access the app**:
    - Frontend: http://localhost:8080
    - API: http://localhost:3000/api
-   - First visit: Register with username + passkey
+   - First visit: Register with username + passkey (WebAuthn)
 
-5. **Configure RPC** (required):
-   - Single provider: Set `ETH_RPC_URL` in `.env` (Infura or Alchemy recommended)
-   - Multiple providers: Use admin panel at `/admin.html` (see CLAUDE.md for details)
+7. **Optional**: Configure multiple RPC providers via admin panel at `/admin.html` (see CLAUDE.md for details)
 
 ### Local Development
 
