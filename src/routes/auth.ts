@@ -23,27 +23,34 @@ import { getEnvVar } from '../utils/config';
 // WebAuthn configuration
 const RP_NAME = getEnvVar('RP_NAME', 'Yapt');
 const RP_ID = getEnvVar('RP_ID', 'localhost');
-const ORIGIN = getEnvVar('ORIGIN', 'http://localhost:3000');
+const ORIGIN_ENV = getEnvVar('ORIGIN', 'http://localhost:3000');
+const ORIGIN_LIST = ORIGIN_ENV.split(',').map((o) => o.trim()).filter(Boolean);
+const EXPECTED_ORIGIN: string | string[] =
+  ORIGIN_LIST.length === 1 ? ORIGIN_LIST[0] : ORIGIN_LIST;
 
 // Validate WebAuthn configuration
 function validateWebAuthnConfig() {
   const isProduction = process.env.NODE_ENV === 'production';
   const hasDefaultRpId = RP_ID === 'localhost';
-  const hasDefaultOrigin = ORIGIN === 'http://localhost:3000';
+  const hasDefaultOrigin = ORIGIN_LIST.includes('http://localhost:3000');
 
   if (isProduction && (hasDefaultRpId || hasDefaultOrigin)) {
     throw new Error(
       'Production WebAuthn configuration error: RP_ID and ORIGIN must be set to production values. ' +
-      'Current values: RP_ID=' + RP_ID + ', ORIGIN=' + ORIGIN
+      'Current values: RP_ID=' + RP_ID + ', ORIGIN=' + ORIGIN_ENV
     );
   }
 
   if (!isProduction && (hasDefaultRpId || hasDefaultOrigin)) {
     console.warn(
-      '⚠️  WARNING: Using default WebAuthn config (RP_ID=' + RP_ID + ', ORIGIN=' + ORIGIN + '). ' +
+      '⚠️  WARNING: Using default WebAuthn config (RP_ID=' + RP_ID + ', ORIGIN=' + ORIGIN_ENV + '). ' +
       'Set RP_ID and ORIGIN environment variables for production.'
     );
   }
+
+  console.log(
+    'WebAuthn config: RP_ID=' + RP_ID + ', ORIGIN(S)=' + ORIGIN_LIST.join(', ')
+  );
 }
 
 // Run validation on module load
@@ -134,7 +141,7 @@ export default async function authRoutes(server: FastifyInstance) {
         const verification = await verifyRegistrationResponse({
           response: body,
           expectedChallenge,
-          expectedOrigin: ORIGIN,
+          expectedOrigin: EXPECTED_ORIGIN,
           expectedRPID: RP_ID,
         });
 
@@ -277,7 +284,7 @@ export default async function authRoutes(server: FastifyInstance) {
         const verification = await verifyAuthenticationResponse({
           response: body,
           expectedChallenge,
-          expectedOrigin: ORIGIN,
+          expectedOrigin: EXPECTED_ORIGIN,
           expectedRPID: RP_ID,
           credential: {
             id: authenticator.credentialId,
@@ -427,7 +434,7 @@ export default async function authRoutes(server: FastifyInstance) {
         const verification = await verifyRegistrationResponse({
           response: body,
           expectedChallenge,
-          expectedOrigin: ORIGIN,
+          expectedOrigin: EXPECTED_ORIGIN,
           expectedRPID: RP_ID,
         });
 
