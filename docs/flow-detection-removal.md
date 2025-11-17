@@ -22,8 +22,12 @@ The flow detection logic was designed for **infrequent updates** (daily/weekly),
 But with **hourly updates**, this problem disappears:
 
 - 20% APY = ~0.0023% per hour
-- Any jump >2% in one hour is obviously a deposit/withdrawal, not yield
+- Any jump >0.1% in one hour is obviously a deposit/withdrawal, not yield
 - Flow detection becomes unnecessary overhead
+
+**Threshold History:**
+- Initial: 2% (too high - missed $1,300 withdrawals on $400k positions)
+- Nov 2025: 0.1% (safe margin above observed fxSAVE volatility of 0.059%)
 
 ## Solution
 
@@ -75,7 +79,7 @@ But this is acceptable because:
 - 2% threshold triggers reset snapshot, which is correct behavior
 
 ### What We Kept
-- **Reset snapshots**: Still detect >2% value changes and create reset snapshots
+- **Reset snapshots**: Still detect >0.1% value changes and create reset snapshots (Nov 2025: lowered from 2%)
 - **Exit detection**: Still archive positions when balance reaches $0
 - **Reward positions**: Still track absolute earnings for volatile-principal positions
 - **APY accuracy**: Still accurate with 4h/7d/30d windows
@@ -99,7 +103,8 @@ const yieldDelta = currentValue - base;
 const yieldDelta = currentValue - previousValue;
 
 // Large changes trigger reset (deposit/withdrawal)
-if (Math.abs(yieldDelta / previousValue) > 0.02) {
+// Nov 2025: Threshold lowered from 0.02 (2%) to 0.001 (0.1%)
+if (Math.abs(yieldDelta / previousValue) > 0.001) {
   await createResetSnapshot(position.id, currentValue, changeType);
 }
 ```
