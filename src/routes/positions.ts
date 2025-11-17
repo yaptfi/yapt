@@ -105,84 +105,50 @@ export default async function positionRoutes(server: FastifyInstance) {
       );
 
       // Calculate actual yields from snapshots for different time periods
-      // Only sum yield_delta_usd from snapshots AFTER the most recent reset for each position
-      // This excludes "fake yield" from undetected withdrawals that occurred before resets
+      // Sum ALL yield_delta_usd values - resets mark deposits/withdrawals but don't invalidate yield history
       let actual24hYield = 0;
       let actual7dYield = 0;
       let actual30dYield = 0;
 
       if (userWalletIds.length > 0) {
-        // 24 hours actual yield
+        // 24 hours actual yield - sum all deltas in the period
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const result24h = await query<{ total_yield: string }>(
-          `WITH position_reset_cutoffs AS (
-             SELECT
-               p.id as position_id,
-               COALESCE(
-                 (SELECT MAX(ts) FROM position_snapshot
-                  WHERE position_id = p.id AND is_reset = true),
-                 '1970-01-01'::timestamptz
-               ) as cutoff_time
-             FROM position p
-             WHERE p.wallet_id = ANY($1::uuid[])
-               AND p.is_active = true
-               AND p.counting_mode IN ('count', 'partial')
-           )
-           SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
+          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
            FROM position_snapshot ps
-           JOIN position_reset_cutoffs prc ON ps.position_id = prc.position_id
-           WHERE ps.ts >= $2
-             AND ps.ts > prc.cutoff_time`,
+           JOIN position p ON ps.position_id = p.id
+           WHERE p.wallet_id = ANY($1::uuid[])
+             AND p.is_active = true
+             AND p.counting_mode IN ('count', 'partial')
+             AND ps.ts >= $2`,
           [userWalletIds, twentyFourHoursAgo]
         );
         actual24hYield = result24h.length > 0 ? parseFloat(result24h[0].total_yield) : 0;
 
-        // 7 days actual yield
+        // 7 days actual yield - sum all deltas in the period
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const result7d = await query<{ total_yield: string }>(
-          `WITH position_reset_cutoffs AS (
-             SELECT
-               p.id as position_id,
-               COALESCE(
-                 (SELECT MAX(ts) FROM position_snapshot
-                  WHERE position_id = p.id AND is_reset = true),
-                 '1970-01-01'::timestamptz
-               ) as cutoff_time
-             FROM position p
-             WHERE p.wallet_id = ANY($1::uuid[])
-               AND p.is_active = true
-               AND p.counting_mode IN ('count', 'partial')
-           )
-           SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
+          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
            FROM position_snapshot ps
-           JOIN position_reset_cutoffs prc ON ps.position_id = prc.position_id
-           WHERE ps.ts >= $2
-             AND ps.ts > prc.cutoff_time`,
+           JOIN position p ON ps.position_id = p.id
+           WHERE p.wallet_id = ANY($1::uuid[])
+             AND p.is_active = true
+             AND p.counting_mode IN ('count', 'partial')
+             AND ps.ts >= $2`,
           [userWalletIds, sevenDaysAgo]
         );
         actual7dYield = result7d.length > 0 ? parseFloat(result7d[0].total_yield) : 0;
 
-        // 30 days actual yield
+        // 30 days actual yield - sum all deltas in the period
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const result30d = await query<{ total_yield: string }>(
-          `WITH position_reset_cutoffs AS (
-             SELECT
-               p.id as position_id,
-               COALESCE(
-                 (SELECT MAX(ts) FROM position_snapshot
-                  WHERE position_id = p.id AND is_reset = true),
-                 '1970-01-01'::timestamptz
-               ) as cutoff_time
-             FROM position p
-             WHERE p.wallet_id = ANY($1::uuid[])
-               AND p.is_active = true
-               AND p.counting_mode IN ('count', 'partial')
-           )
-           SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
+          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
            FROM position_snapshot ps
-           JOIN position_reset_cutoffs prc ON ps.position_id = prc.position_id
-           WHERE ps.ts >= $2
-             AND ps.ts > prc.cutoff_time`,
+           JOIN position p ON ps.position_id = p.id
+           WHERE p.wallet_id = ANY($1::uuid[])
+             AND p.is_active = true
+             AND p.counting_mode IN ('count', 'partial')
+             AND ps.ts >= $2`,
           [userWalletIds, thirtyDaysAgo]
         );
         actual30dYield = result30d.length > 0 ? parseFloat(result30d[0].total_yield) : 0;
