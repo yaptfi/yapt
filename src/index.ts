@@ -4,7 +4,9 @@ import fastifySession from '@fastify/session';
 import fastifyCors from '@fastify/cors';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyRedis from '@fastify/redis';
+import fastifyStatic from '@fastify/static';
 import { readFileSync } from 'fs';
+import { join } from 'path';
 import { initializeScheduler, shutdownScheduler } from './jobs/scheduler';
 import { closePool } from './utils/db';
 import { getEnvVar } from './utils/config';
@@ -231,6 +233,19 @@ async function start() {
 
     // Static frontend is now served separately (see frontend/).
     // The backend focuses on API under /api only.
+
+    // Serve .well-known directory for Apple App Site Association and other well-known files
+    await server.register(fastifyStatic, {
+      root: join(__dirname, '..', '.well-known'),
+      prefix: '/.well-known/',
+      decorateReply: false,
+      setHeaders: (res, path) => {
+        // Apple App Site Association must be served as application/json
+        if (path.endsWith('apple-app-site-association')) {
+          res.setHeader('Content-Type', 'application/json');
+        }
+      }
+    });
 
     // Initialize protocol plugins (built-ins for now)
     await initPlugins();
