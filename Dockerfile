@@ -34,6 +34,8 @@ COPY migrations ./migrations
 COPY .node-pg-migrate.config.js ./
 # Copy frontend assets to serve in-container
 COPY frontend ./frontend
+# Copy .well-known directory for Apple App Site Association
+COPY .well-known ./.well-known
 ## Entrypoint to run both API and frontend server
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 COPY healthcheck.sh ./healthcheck.sh

@@ -241,10 +241,18 @@ async function start() {
       decorateReply: false,
       setHeaders: (res, path) => {
         // Apple App Site Association must be served as application/json
-        if (path.endsWith('apple-app-site-association')) {
+        if (path.includes('apple-app-site-association')) {
           res.setHeader('Content-Type', 'application/json');
         }
       }
+    });
+
+    // Additional hook to ensure Content-Type for AASA
+    server.addHook('onSend', async (request, reply, payload) => {
+      if (request.url === '/.well-known/apple-app-site-association') {
+        reply.header('Content-Type', 'application/json');
+      }
+      return payload;
     });
 
     // Initialize protocol plugins (built-ins for now)
