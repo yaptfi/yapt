@@ -1,6 +1,8 @@
 import { getAllNotificationSettings } from '../models/notificationSettings';
 import { createNotificationLog, getRecentNotifications } from '../models/notificationLog';
 import { sendDepegNotification, sendApyDropNotification } from './ntfy';
+import { sendApnsDepegNotification, sendApnsApyDropNotification } from './apns';
+import { getActiveDevices } from '../models/device';
 import { fetchStablecoinPrices, isDepegged } from './stablecoinPriceMonitor';
 import { getActivePositionsByWallets } from '../models/position';
 import { get4hApyValues } from '../models/snapshot';
@@ -102,24 +104,47 @@ async function checkDepegNotifications(settings: any[]): Promise<void> {
         continue;
       }
 
-      // Send notification
-      if (!setting.ntfyTopic) {
-        console.warn(`[notifications] User ${setting.userId} has no ntfy topic`);
-        continue;
+      // Send notification via ntfy.sh (if configured)
+      const threshold = depegCheck.isUpper ? upperThreshold! : lowerThreshold;
+      let sentViaAnyChannel = false;
+
+      if (setting.ntfyTopic) {
+        const sent = await sendDepegNotification({
+          topic: setting.ntfyTopic,
+          stablecoinSymbol: symbol,
+          currentPrice: price,
+          threshold,
+          isUpper: depegCheck.isUpper,
+          severity: setting.depegSeverity,
+        });
+
+        if (sent) {
+          sentViaAnyChannel = true;
+        }
       }
 
-      const threshold = depegCheck.isUpper ? upperThreshold! : lowerThreshold;
+      // Send to iOS devices (APNs)
+      const devices = await getActiveDevices(setting.userId);
+      const iosDevices = devices.filter((d) => d.deviceType === 'ios');
 
-      const sent = await sendDepegNotification({
-        topic: setting.ntfyTopic,
-        stablecoinSymbol: symbol,
-        currentPrice: price,
-        threshold,
-        isUpper: depegCheck.isUpper,
-        severity: setting.depegSeverity,
-      });
+      for (const device of iosDevices) {
+        const sent = await sendApnsDepegNotification({
+          deviceToken: device.pushToken,
+          deviceId: device.id,
+          environment: device.environment || 'production',
+          stablecoinSymbol: symbol,
+          currentPrice: price,
+          threshold,
+          isUpper: depegCheck.isUpper,
+          severity: setting.depegSeverity,
+        });
 
-      if (sent) {
+        if (sent) {
+          sentViaAnyChannel = true;
+        }
+      }
+
+      if (sentViaAnyChannel) {
         // Log the notification
         await createNotificationLog({
           userId: setting.userId,
@@ -210,21 +235,45 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
         continue;
       }
 
-      // Send notification
-      if (!setting.ntfyTopic) {
-        console.warn(`[notifications] User ${setting.userId} has no ntfy topic`);
-        continue;
+      // Send notification via ntfy.sh (if configured)
+      let sentViaAnyChannel = false;
+
+      if (setting.ntfyTopic) {
+        const sent = await sendApyDropNotification({
+          topic: setting.ntfyTopic,
+          positionName: position.displayName,
+          currentApy: apy4h,
+          threshold,
+          severity: setting.apySeverity,
+        });
+
+        if (sent) {
+          sentViaAnyChannel = true;
+        }
       }
 
-      const sent = await sendApyDropNotification({
-        topic: setting.ntfyTopic,
-        positionName: position.displayName,
-        currentApy: apy4h,
-        threshold,
-        severity: setting.apySeverity,
-      });
+      // Send to iOS devices (APNs)
+      const devices = await getActiveDevices(setting.userId);
+      const iosDevices = devices.filter((d) => d.deviceType === 'ios');
 
-      if (sent) {
+      for (const device of iosDevices) {
+        const sent = await sendApnsApyDropNotification({
+          deviceToken: device.pushToken,
+          deviceId: device.id,
+          environment: device.environment || 'production',
+          positionName: position.displayName,
+          positionId: position.id,
+          currentApy: apy4h,
+          threshold,
+          severity: setting.apySeverity,
+        });
+
+        if (sent) {
+          sentViaAnyChannel = true;
+        }
+      }
+
+      if (sentViaAnyChannel) {
         // Log the notification
         await createNotificationLog({
           userId: setting.userId,

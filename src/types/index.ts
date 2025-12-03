@@ -230,3 +230,21 @@ export interface NotificationLog {
   metadata: Record<string, any> | null;
   sentAt: Date;
 }
+
+export type DeviceType = 'ios' | 'android' | 'web';
+export type ApnsEnvironment = 'production' | 'sandbox';
+
+export interface DevicePushToken {
+  id: string;
+  userId: string;
+  deviceType: DeviceType;
+  deviceName: string | null;
+  deviceId: string | null;
+  pushToken: string;
+  endpoint: string | null;
+  isActive: boolean;
+  environment: ApnsEnvironment | null;
+  lastUsedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}

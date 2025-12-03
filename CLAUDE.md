@@ -243,6 +243,9 @@ try {
 - `position_snapshot`: Time-series data points (value, flows, yield delta, APY) - core data for tracking
 - `portfolio_hourly`: Reserved for future aggregated metrics (not currently used)
 - `rpc_provider`: RPC provider configurations with capabilities, rate limits, and health status (added Nov 2025)
+- `notification_settings`: Per-user notification preferences (depeg/APY thresholds, severity levels, ntfy topic)
+- `notification_log`: History of sent notifications with metadata (stablecoin, position, values)
+- `device_push_token`: Registered devices for native push notifications (iOS APNs, Android FCM, Web Push)
 
 **Metadata Pattern**: `position.metadata` (JSONB) stores protocol-specific data:
 - `walletAddress`: Used by adapters for event filtering
@@ -306,6 +309,22 @@ Required variables (see `.env.example`):
 - Generate self-signed certs: `openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365`
 - For local network deployment, add `/etc/hosts` entry on all client machines (e.g., `192.168.1.100  yapt.local`)
 - Change `SESSION_SECRET` in production - never use default values
+
+**Push Notifications - iOS (APNs)** (optional):
+- `APNS_KEY_PATH`: Path to APNs Auth Key `.p8` file (e.g., "/path/to/AuthKey_XXXXXXXXXX.p8")
+- `APNS_KEY_ID`: 10-character APNs Key ID from Apple Developer Account
+- `APNS_TEAM_ID`: 10-character Team ID from Apple Developer Account
+- `APNS_BUNDLE_ID`: iOS app bundle identifier (e.g., "com.yourcompany.yapt")
+- **Setup Instructions**:
+  1. Log in to [Apple Developer Account](https://developer.apple.com/account)
+  2. Navigate to Certificates, Identifiers & Profiles → Keys
+  3. Create a new key with "Apple Push Notifications service (APNs)" enabled
+  4. Download the `.p8` file (save securely - cannot be re-downloaded)
+  5. Note the Key ID (10 characters, shown after creation)
+  6. Note your Team ID (found in account settings)
+  7. Set environment variables pointing to the `.p8` file and IDs
+- **Backward Compatibility**: ntfy.sh notifications continue to work if APNs is not configured
+- **Multi-Channel**: If both ntfy.sh and APNs are configured, notifications are sent via both channels
 
 ## Testing Strategy
 
@@ -436,15 +455,23 @@ src/
 │   ├── uniswap-v4.ts # NFT-based LP positions with scan-capable provider routing
 │   └── index.ts     # Adapter registry
 ├── jobs/            # BullMQ scheduler (hourly updates)
-├── models/          # Database CRUD (wallet, position, snapshot, user, authenticator, rpc-provider)
-│   └── rpc-provider.ts # RPC provider configuration management
+├── models/          # Database CRUD (wallet, position, snapshot, user, authenticator, rpc-provider, device)
+│   ├── rpc-provider.ts # RPC provider configuration management
+│   ├── device.ts    # Device push token management (iOS/Android/Web)
+│   ├── notificationSettings.ts # User notification preferences
+│   └── notificationLog.ts # Notification history tracking
 ├── routes/          # Fastify REST API endpoints
 │   ├── auth.ts      # WebAuthn authentication (register, login, add-device, logout)
 │   ├── wallets.ts   # Wallet management (requires auth)
 │   ├── positions.ts # Position listing (requires auth)
 │   ├── portfolio.ts # Portfolio aggregation (requires auth)
+│   ├── notifications.ts # Notification settings and history (requires auth)
+│   ├── devices.ts   # Device registration for push notifications (requires auth)
 │   └── admin.ts     # Admin endpoints including RPC provider management
-├── services/        # Business logic (discovery, update)
+├── services/        # Business logic (discovery, update, notifications)
+│   ├── notificationChecker.ts # Hourly notification checks (depeg, APY drops)
+│   ├── ntfy.ts      # ntfy.sh push notification integration
+│   └── apns.ts      # Apple Push Notification Service (iOS)
 ├── types/           # TypeScript type definitions
 ├── utils/           # APY math, DB connection, Ethereum helpers
 │   ├── rpc-manager.ts # RPC provider routing, rate limiting, health tracking
@@ -472,6 +499,58 @@ docs/                # Technical documentation
 docker-entrypoint.sh # Starts both API and frontend servers
 healthcheck.sh       # Health check supporting HTTP and HTTPS
 ```
+
+## iOS App Integration
+
+The backend provides complete API support for native iOS applications with push notifications.
+
+### **Authentication**
+- Use session-cookie authentication (works natively with `URLSession`)
+- WebAuthn passkeys work via `ASAuthorizationPlatformPublicKeyCredentialProvider`
+- See `docs/ios-client.md` for detailed implementation guide
+
+### **Device Registration for Push Notifications**
+
+**Step 1: Request notification permissions in iOS app**
+```swift
+UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+```
+
+**Step 2: Register device token with backend**
+```swift
+// After receiving APNs device token from iOS
+POST /api/devices/register
+{
+  "deviceType": "ios",
+  "pushToken": "<hex_device_token>",
+  "deviceName": "iPhone 15 Pro",
+  "environment": "production"  // or "sandbox" for TestFlight
+}
+```
+
+**Step 3: Handle incoming notifications**
+- Notifications include custom data payload with `type`, `positionId`, `stablecoin`, etc.
+- Use deep linking to navigate to specific positions/wallets
+
+**Available Endpoints**:
+- `POST /api/devices/register` - Register new device
+- `GET /api/devices` - List user's devices
+- `PUT /api/devices/:id` - Update device (token refresh, disable)
+- `DELETE /api/devices/:id` - Remove device
+- `GET /api/notifications/settings` - Get notification preferences
+- `PUT /api/notifications/settings` - Configure depeg/APY thresholds
+- `GET /api/notifications/history` - View past notifications
+
+**Notification Types**:
+- **Depeg Alerts**: Stablecoin price falls below/above user's threshold
+- **APY Drop Alerts**: Position's 4h APY drops below user's threshold
+
+**Configuration Flow**:
+1. User registers device via iOS app
+2. User configures notification preferences (thresholds, severity)
+3. Hourly job checks conditions and sends notifications via APNs
+4. iOS app receives notification with custom data
+5. User taps notification → app deep links to relevant position
 
 ## Extending the System
 

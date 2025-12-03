@@ -23,6 +23,7 @@ import pricesRoutes from './routes/prices';
 import adminRoutes from './routes/admin';
 import guestRoutes from './routes/guest';
 import notificationRoutes from './routes/notifications';
+import deviceRoutes from './routes/devices';
 import stablecoinsRoutes from './routes/stablecoins';
 import protocolsRoutes from './routes/protocols';
 
@@ -281,6 +282,7 @@ async function start() {
     await server.register(adminRoutes, { prefix: '/api/admin' });
     await server.register(guestRoutes, { prefix: '/api/guest' });
     await server.register(notificationRoutes, { prefix: '/api/notifications' });
+    await server.register(deviceRoutes, { prefix: '/api/devices' });
     await server.register(stablecoinsRoutes, { prefix: '/api/stablecoins' });
     await server.register(protocolsRoutes, { prefix: '/api/protocols' });
 
