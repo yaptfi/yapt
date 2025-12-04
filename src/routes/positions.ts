@@ -106,49 +106,83 @@ export default async function positionRoutes(server: FastifyInstance) {
 
       // Calculate actual yields from snapshots for different time periods
       // Sum ALL yield_delta_usd values - resets mark deposits/withdrawals but don't invalidate yield history
+      // Include BOTH active and archived positions - archived positions still earned real income
       let actual24hYield = 0;
       let actual7dYield = 0;
       let actual30dYield = 0;
 
       if (userWalletIds.length > 0) {
-        // 24 hours actual yield - sum all deltas in the period
+        // 24 hours actual yield - sum all deltas in the period from BOTH active and archived positions
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const result24h = await query<{ total_yield: string }>(
-          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
-           FROM position_snapshot ps
-           JOIN position p ON ps.position_id = p.id
-           WHERE p.wallet_id = ANY($1::uuid[])
-             AND p.is_active = true
-             AND p.counting_mode IN ('count', 'partial')
-             AND ps.ts >= $2`,
+          `SELECT COALESCE(SUM(yield_delta_usd), 0) as total_yield
+           FROM (
+             -- Active positions
+             SELECT ps.yield_delta_usd
+             FROM position_snapshot ps
+             JOIN position p ON ps.position_id = p.id
+             WHERE p.wallet_id = ANY($1::uuid[])
+               AND p.counting_mode IN ('count', 'partial')
+               AND ps.ts >= $2
+             UNION ALL
+             -- Archived positions (still earned real income before exit)
+             SELECT psa.yield_delta_usd
+             FROM position_snapshot_archive psa
+             JOIN position_archive pa ON psa.position_id = pa.id
+             WHERE pa.wallet_id = ANY($1::uuid[])
+               AND pa.counting_mode IN ('count', 'partial')
+               AND psa.ts >= $2
+           ) combined`,
           [userWalletIds, twentyFourHoursAgo]
         );
         actual24hYield = result24h.length > 0 ? parseFloat(result24h[0].total_yield) : 0;
 
-        // 7 days actual yield - sum all deltas in the period
+        // 7 days actual yield - sum all deltas in the period from BOTH active and archived positions
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const result7d = await query<{ total_yield: string }>(
-          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
-           FROM position_snapshot ps
-           JOIN position p ON ps.position_id = p.id
-           WHERE p.wallet_id = ANY($1::uuid[])
-             AND p.is_active = true
-             AND p.counting_mode IN ('count', 'partial')
-             AND ps.ts >= $2`,
+          `SELECT COALESCE(SUM(yield_delta_usd), 0) as total_yield
+           FROM (
+             -- Active positions
+             SELECT ps.yield_delta_usd
+             FROM position_snapshot ps
+             JOIN position p ON ps.position_id = p.id
+             WHERE p.wallet_id = ANY($1::uuid[])
+               AND p.counting_mode IN ('count', 'partial')
+               AND ps.ts >= $2
+             UNION ALL
+             -- Archived positions (still earned real income before exit)
+             SELECT psa.yield_delta_usd
+             FROM position_snapshot_archive psa
+             JOIN position_archive pa ON psa.position_id = pa.id
+             WHERE pa.wallet_id = ANY($1::uuid[])
+               AND pa.counting_mode IN ('count', 'partial')
+               AND psa.ts >= $2
+           ) combined`,
           [userWalletIds, sevenDaysAgo]
         );
         actual7dYield = result7d.length > 0 ? parseFloat(result7d[0].total_yield) : 0;
 
-        // 30 days actual yield - sum all deltas in the period
+        // 30 days actual yield - sum all deltas in the period from BOTH active and archived positions
         const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const result30d = await query<{ total_yield: string }>(
-          `SELECT COALESCE(SUM(ps.yield_delta_usd), 0) as total_yield
-           FROM position_snapshot ps
-           JOIN position p ON ps.position_id = p.id
-           WHERE p.wallet_id = ANY($1::uuid[])
-             AND p.is_active = true
-             AND p.counting_mode IN ('count', 'partial')
-             AND ps.ts >= $2`,
+          `SELECT COALESCE(SUM(yield_delta_usd), 0) as total_yield
+           FROM (
+             -- Active positions
+             SELECT ps.yield_delta_usd
+             FROM position_snapshot ps
+             JOIN position p ON ps.position_id = p.id
+             WHERE p.wallet_id = ANY($1::uuid[])
+               AND p.counting_mode IN ('count', 'partial')
+               AND ps.ts >= $2
+             UNION ALL
+             -- Archived positions (still earned real income before exit)
+             SELECT psa.yield_delta_usd
+             FROM position_snapshot_archive psa
+             JOIN position_archive pa ON psa.position_id = pa.id
+             WHERE pa.wallet_id = ANY($1::uuid[])
+               AND pa.counting_mode IN ('count', 'partial')
+               AND psa.ts >= $2
+           ) combined`,
           [userWalletIds, thirtyDaysAgo]
         );
         actual30dYield = result30d.length > 0 ? parseFloat(result30d[0].total_yield) : 0;

@@ -109,14 +109,31 @@ export class YearnV3Adapter extends BaseProtocolAdapter {
 
     // Read user's shares from whichever share token we're tracking (gauge or vault)
     const shareToken: string = position.metadata.shareToken || position.metadata.vaultToken;
+
+    // Log the exact contract call parameters for debugging
+    console.log(`${this.protocolName}: Checking balance - shareToken=${shareToken}, wallet=${walletAddress}`);
+
     const erc20Abi = getAbi('ERC20');
     const shareErc20 = getContract(shareToken, erc20Abi);
     await rpcThrottle();
-    const shares = await (shareErc20 as any).balanceOf(walletAddress);
+
+    let shares: bigint;
+    try {
+      shares = await (shareErc20 as any).balanceOf(walletAddress);
+    } catch (error: any) {
+      // Log detailed error info to help diagnose RPC issues
+      console.error(`${this.protocolName}: RPC error reading balance:`, {
+        shareToken,
+        walletAddress,
+        error: error.message || error,
+      });
+      throw new Error(`Failed to read balance for ${this.protocolName}: ${error.message || error}`);
+    }
 
     // Early return for zero balance (position exited)
     if (shares === 0n) {
-      console.log(`${this.protocolName}: Zero balance detected (position exited)`);
+      console.warn(`${this.protocolName}: Zero balance detected - shareToken=${shareToken}, wallet=${walletAddress}`);
+      console.warn(`${this.protocolName}: This may indicate an actual exit OR incorrect metadata. Verify addresses!`);
       return 0;
     }
 
