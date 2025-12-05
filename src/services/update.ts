@@ -79,19 +79,19 @@ export async function updatePosition(position: Position): Promise<void> {
     // Get latest snapshot (for recent net flow detection)
     const latestSnapshot = await getLatestSnapshot(position.id);
 
-    // CASE 1: Complete Exit Detection (value = $0)
-    if (currentValue === 0 && latestSnapshot) {
+    // CASE 1: Complete Exit Detection (value < $10 threshold)
+    if (currentValue < 10 && latestSnapshot) {
       // Reward positions: zero value is normal (rewards claimed)
       if (position.measureMethod === 'rewards') {
-        console.log(`  Reward position at $0 (rewards claimed) - creating normal snapshot`);
-        await createSnapshot(position.id, new Date(), 0, 0, 0, null);
+        console.log(`  Reward position at $${currentValue.toFixed(2)} (rewards claimed) - creating normal snapshot`);
+        await createSnapshot(position.id, new Date(), currentValue, 0, 0, null);
         return;
       }
 
-      // Principal positions: RPC successfully returned zero balance -> archive
+      // Principal positions: RPC successfully returned near-zero balance -> archive
       // If RPC had failed, it would have thrown an error caught by try-catch below
       const previousValue = parseFloat(latestSnapshot.value_usd);
-      console.log(`  Complete exit detected (verified zero balance, previous: $${previousValue.toFixed(2)}) - archiving position`);
+      console.log(`  Complete exit detected (value $${currentValue.toFixed(2)} < $10 threshold, previous: $${previousValue.toFixed(2)}) - archiving position`);
       await archivePosition(position.id, 'complete_exit');
       return;
     }
