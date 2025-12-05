@@ -135,8 +135,10 @@ export interface ProtocolConfig {
     token?: string;
     decimals?: number; // Underlying asset decimals (for ERC4626, this is the asset token decimals)
     shareDecimals?: number; // Optional: ERC4626 share token decimals (defaults to decimals if omitted)
-    type?: 'rebase' | 'exchangeRate' | 'vault' | 'staking-rewards' | 'staking-vault' | 'convex-curve-vault' | 'yearn-v3-vault' | 'lp-position';
+    type?: 'rebase' | 'exchangeRate' | 'vault' | 'staking-rewards' | 'staking-vault' | 'convex-curve-vault' | 'yearn-v3-vault' | 'lp-position' | 'aave-umbrella';
     stakingContract?: string;
+    stakeToken?: string; // Aave Umbrella stake token (stkwaToken)
+    wrappedToken?: string; // Aave Umbrella wrapped token (waToken)
     depositToken?: string;
     curveVaultToken?: string;
     cvxCrvToken?: string;

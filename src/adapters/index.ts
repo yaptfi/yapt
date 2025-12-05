@@ -1,5 +1,6 @@
 import { IProtocolAdapter } from './base';
 import { AaveV3Adapter } from './aave-v3';
+import { AaveUmbrellaAdapter } from './aave-umbrella';
 import { CurveScrvUSDAdapter } from './curve-scrvusd';
 import { ConvexCvxCrvAdapter } from './convex-cvxcrv';
 import { CurveLendingWbtcAdapter } from './curve-lending-wbtc';
@@ -30,6 +31,7 @@ export function getAllAdapters(): IProtocolAdapter[] {
 export {
   IProtocolAdapter,
   AaveV3Adapter,
+  AaveUmbrellaAdapter,
   CurveScrvUSDAdapter,
   ConvexCvxCrvAdapter,
   CurveLendingWbtcAdapter,
