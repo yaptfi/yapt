@@ -148,9 +148,19 @@ export class AaveUmbrellaAdapter extends BaseProtocolAdapter {
     // Note: For non-stablecoin rewards (AAVE, GHO), we'd need price oracles
     let totalRewards = 0;
     for (let i = 0; i < rewardTokens.length; i++) {
-      const rewardAmount = parseFloat(formatUnits(rewardAmounts[i], 18)); // Most rewards are 18 decimals
+      // Query decimals for each reward token dynamically
+      const erc20Abi = getAbi('ERC20');
+      const rewardTokenContract = getContract(rewardTokens[i], erc20Abi);
+
+      await rpcThrottle();
+      const rewardDecimals = await rewardTokenContract.decimals();
+
+      await rpcThrottle();
+      const rewardSymbol = await rewardTokenContract.symbol();
+
+      const rewardAmount = parseFloat(formatUnits(rewardAmounts[i], rewardDecimals));
       totalRewards += rewardAmount;
-      console.log(`${this.protocolName}: Reward ${i}: ${rewardTokens[i]} = ${rewardAmount.toFixed(4)}`);
+      console.log(`${this.protocolName}: Reward ${i}: ${rewardSymbol} (${rewardTokens[i]}) = ${rewardAmount.toFixed(4)} USD`);
     }
 
     const totalValue = principalAmount + totalRewards;
@@ -160,5 +170,81 @@ export class AaveUmbrellaAdapter extends BaseProtocolAdapter {
     );
 
     return totalValue * priceUsd;
+  }
+
+  async calcNetFlows(
+    position: Position,
+    fromBlock: number,
+    toBlock: number | 'latest'
+  ) {
+    const { stakeToken, walletAddress, decimals } = position.metadata;
+
+    if (!stakeToken || !walletAddress || decimals === undefined) {
+      throw new Error(`Invalid ${this.protocolKey} position metadata for calcNetFlows`);
+    }
+
+    const provider = (await import('../utils/ethereum')).getProvider();
+    const latestBlock = toBlock === 'latest' ? await provider.getBlockNumber() : toBlock;
+
+    // Get stake token contract to find rewards controller
+    const stakeTokenAbi = getAbi('AaveUmbrellaStakeToken');
+    const stakeTokenContract = getContract(stakeToken, stakeTokenAbi);
+
+    await rpcThrottle();
+    const rewardsControllerAddress = await stakeTokenContract.REWARDS_CONTROLLER();
+
+    // Track reward claims as withdrawals
+    // When user claims rewards, they're withdrawing value from the position
+    const rewardsAbi = getAbi('AaveRewardsController');
+    const rewardsController = getContract(rewardsControllerAddress, rewardsAbi);
+
+    // Query RewardsClaimed events for this user
+    // RewardsClaimed(address indexed user, address indexed reward, address indexed to, uint256 amount)
+    const filter = rewardsController.filters.RewardsClaimed(walletAddress);
+
+    await rpcThrottle();
+    const events = await rewardsController.queryFilter(filter, fromBlock, latestBlock);
+
+    let totalClaimedUsd = 0;
+
+    for (const event of events) {
+      // Cast to EventLog to access args
+      if (!('args' in event)) continue;
+
+      const rewardTokenAddress = event.args.reward as string;
+      const claimedAmount = event.args.amount as bigint;
+
+      if (!rewardTokenAddress || !claimedAmount) continue;
+
+      // Query decimals for the reward token
+      const erc20Abi = getAbi('ERC20');
+      const rewardTokenContract = getContract(rewardTokenAddress, erc20Abi);
+
+      await rpcThrottle();
+      const rewardDecimals = await rewardTokenContract.decimals();
+
+      const claimedValue = parseFloat(formatUnits(claimedAmount, rewardDecimals));
+
+      // Assume reward tokens are stablecoins at $1.00
+      // (In reality we'd need price oracles for non-stable rewards)
+      totalClaimedUsd += claimedValue * 1.0;
+
+      console.log(
+        `${this.protocolName}: Detected reward claim of ${claimedValue.toFixed(4)} (${rewardTokenAddress}) at block ${event.blockNumber}`
+      );
+    }
+
+    // Claims are withdrawals (negative flow)
+    const netFlowsUsd = -totalClaimedUsd;
+
+    console.log(
+      `${this.protocolName}: Total reward claims: $${totalClaimedUsd.toFixed(2)} (net flows: ${netFlowsUsd.toFixed(2)})`
+    );
+
+    return {
+      netFlowsUsd,
+      fromBlock,
+      toBlock: latestBlock,
+    };
   }
 }
