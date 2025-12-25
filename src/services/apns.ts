@@ -4,18 +4,20 @@ import { NotificationSeverity } from '../types';
 import { updateDeviceLastUsed, deactivateDeviceByToken } from '../models/device';
 
 /**
- * APNs provider instance (singleton)
- * Initialized lazily when first notification is sent
+ * APNs provider instances (keyed by environment)
  */
-let apnsProvider: apn.Provider | null = null;
+const apnsProviders: Record<string, apn.Provider | null> = {
+  production: null,
+  sandbox: null,
+};
 
 /**
  * Initialize APNs provider with configuration from environment variables
  */
-function getApnsProvider(): apn.Provider | null {
+function getApnsProvider(environment: 'production' | 'sandbox'): apn.Provider | null {
   // Return existing provider if already initialized
-  if (apnsProvider) {
-    return apnsProvider;
+  if (apnsProviders[environment]) {
+    return apnsProviders[environment];
   }
 
   // Check if APNs is configured
@@ -30,19 +32,20 @@ function getApnsProvider(): apn.Provider | null {
   }
 
   try {
-    apnsProvider = new apn.Provider({
+    const provider = new apn.Provider({
       token: {
         key: keyPath,
         keyId: keyId,
         teamId: teamId,
       },
-      production: true, // Use production APNs servers by default
+      production: environment === 'production',
     });
 
-    console.log('[APNs] Provider initialized successfully');
-    return apnsProvider;
+    apnsProviders[environment] = provider;
+    console.log(`[APNs] ${environment} provider initialized successfully`);
+    return provider;
   } catch (error) {
-    console.error('[APNs] Failed to initialize provider:', error);
+    console.error(`[APNs] Failed to initialize ${environment} provider:`, error);
     return null;
   }
 }
@@ -89,10 +92,10 @@ export async function sendApnsNotification(params: {
   badge?: number;
   data?: Record<string, any>;
 }): Promise<boolean> {
-  const provider = getApnsProvider();
+  const provider = getApnsProvider(params.environment);
 
   if (!provider) {
-    console.warn('[APNs] Provider not available - skipping notification');
+    console.warn(`[APNs] ${params.environment} provider not available - skipping notification`);
     return false;
   }
 
@@ -137,8 +140,8 @@ export async function sendApnsNotification(params: {
       console.error(`[APNs] Failed to send notification to device ${params.deviceToken.slice(-8)}:`, failure.response);
 
       // Handle specific error cases
-      if (failure.status === '410' || failure.response?.reason === 'Unregistered') {
-        console.warn(`[APNs] Device token is invalid or unregistered - marking device as inactive`);
+      if (failure.status === '410' || failure.response?.reason === 'Unregistered' || failure.response?.reason === 'BadDeviceToken') {
+        console.warn(`[APNs] Device token is invalid or unregistered (${failure.response?.reason}) - marking device as inactive`);
         await deactivateDeviceByToken(params.deviceToken);
       }
 
@@ -235,9 +238,13 @@ export async function sendApnsApyDropNotification(params: {
  * Shutdown APNs provider (call on server shutdown)
  */
 export async function shutdownApnsProvider(): Promise<void> {
-  if (apnsProvider) {
-    await apnsProvider.shutdown();
-    apnsProvider = null;
-    console.log('[APNs] Provider shutdown complete');
+  if (apnsProviders.production) {
+    await apnsProviders.production.shutdown();
+    apnsProviders.production = null;
   }
+  if (apnsProviders.sandbox) {
+    await apnsProviders.sandbox.shutdown();
+    apnsProviders.sandbox = null;
+  }
+  console.log('[APNs] Providers shutdown complete');
 }
