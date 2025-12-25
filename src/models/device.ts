@@ -221,6 +221,18 @@ export async function updateDeviceLastUsed(deviceId: string): Promise<void> {
 }
 
 /**
+ * Deactivate a device by its push token (called when APNs returns 410 Unregistered)
+ */
+export async function deactivateDeviceByToken(pushToken: string): Promise<void> {
+  await query(
+    `UPDATE device_push_token
+     SET is_active = false, updated_at = NOW()
+     WHERE push_token = $1`,
+    [pushToken]
+  );
+}
+
+/**
  * Delete a device registration
  */
 export async function deleteDevice(deviceId: string, userId: string): Promise<boolean> {

@@ -90,6 +90,57 @@ export async function getNotificationLogs(
 }
 
 /**
+ * Get notification logs for a user with total count (for pagination)
+ */
+export async function getNotificationLogsWithCount(
+  userId: string,
+  options?: {
+    limit?: number;
+    offset?: number;
+    notificationType?: NotificationType;
+  }
+): Promise<{ notifications: NotificationLog[]; total: number }> {
+  const limit = options?.limit || 50;
+  const offset = options?.offset || 0;
+
+  let whereClause = 'WHERE user_id = $1';
+  const params: any[] = [userId];
+
+  if (options?.notificationType) {
+    whereClause += ' AND notification_type = $2';
+    params.push(options.notificationType);
+  }
+
+  // Get total count
+  const countResult = await queryOne<{ count: string }>(
+    `SELECT COUNT(*) as count FROM notification_log ${whereClause}`,
+    params
+  );
+  const total = parseInt(countResult?.count ?? '0', 10);
+
+  // Get paginated results
+  const notifications = await query<NotificationLog>(
+    `SELECT
+      id,
+      user_id as "userId",
+      notification_type as "notificationType",
+      severity,
+      title,
+      message,
+      metadata,
+      sent_at as "sentAt"
+     FROM notification_log
+     ${whereClause}
+     ORDER BY sent_at DESC
+     LIMIT ${limit}
+     OFFSET ${offset}`,
+    params
+  );
+
+  return { notifications, total };
+}
+
+/**
  * Get recent notification logs within a time window (to prevent spam)
  */
 export async function getRecentNotifications(

@@ -5,8 +5,9 @@ import {
   upsertNotificationSettings,
   deleteNotificationSettings,
 } from '../models/notificationSettings';
-import { getNotificationLogs } from '../models/notificationLog';
-import { NotificationSeverity } from '../types';
+import { getNotificationLogsWithCount } from '../models/notificationLog';
+import { createDevice, deleteDevice } from '../models/device';
+import { NotificationSeverity, NotificationType, DeviceType } from '../types';
 
 export default async function notificationRoutes(server: FastifyInstance) {
   /**
@@ -27,28 +28,32 @@ export default async function notificationRoutes(server: FastifyInstance) {
         if (!settings) {
           // Return default settings if none exist
           return reply.send({
-            depegEnabled: false,
-            depegSeverity: 'default',
-            depegLowerThreshold: '0.99',
-            depegUpperThreshold: null,
-            depegSymbols: null, // null => all supported stablecoins
-            apyEnabled: false,
-            apySeverity: 'default',
-            apyThreshold: '0.01',
-            ntfyTopic: null,
+            settings: {
+              depegEnabled: false,
+              depegSeverity: 'default',
+              depegLowerThreshold: 0.99,
+              depegUpperThreshold: null,
+              depegSymbols: null, // null => all supported stablecoins
+              apyEnabled: false,
+              apySeverity: 'default',
+              apyThreshold: 0.01,
+              ntfyTopic: null,
+            },
           });
         }
 
         return reply.send({
-          depegEnabled: settings.depegEnabled,
-          depegSeverity: settings.depegSeverity,
-          depegLowerThreshold: settings.depegLowerThreshold,
-          depegUpperThreshold: settings.depegUpperThreshold,
-          depegSymbols: settings.depegSymbols,
-          apyEnabled: settings.apyEnabled,
-          apySeverity: settings.apySeverity,
-          apyThreshold: settings.apyThreshold,
-          ntfyTopic: settings.ntfyTopic,
+          settings: {
+            depegEnabled: settings.depegEnabled,
+            depegSeverity: settings.depegSeverity,
+            depegLowerThreshold: parseFloat(settings.depegLowerThreshold),
+            depegUpperThreshold: settings.depegUpperThreshold ? parseFloat(settings.depegUpperThreshold) : null,
+            depegSymbols: settings.depegSymbols,
+            apyEnabled: settings.apyEnabled,
+            apySeverity: settings.apySeverity,
+            apyThreshold: parseFloat(settings.apyThreshold),
+            ntfyTopic: settings.ntfyTopic,
+          },
         });
       } catch (error) {
         server.log.error(error);
@@ -211,7 +216,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
     Querystring: {
       limit?: string;
       offset?: string;
-      type?: 'depeg' | 'apy_drop';
+      type?: 'depeg' | 'apy' | 'apy_drop';
     };
   }>(
     '/history',
@@ -221,7 +226,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
         Querystring: {
           limit?: string;
           offset?: string;
-          type?: 'depeg' | 'apy_drop';
+          type?: 'depeg' | 'apy' | 'apy_drop';
         };
       }>,
       reply: FastifyReply
@@ -231,20 +236,143 @@ export default async function notificationRoutes(server: FastifyInstance) {
       }
 
       try {
-        const limit = request.query.limit ? parseInt(request.query.limit) : 50;
+        const limit = Math.min(request.query.limit ? parseInt(request.query.limit) : 50, 100);
         const offset = request.query.offset ? parseInt(request.query.offset) : 0;
-        const notificationType = request.query.type;
 
-        const logs = await getNotificationLogs(request.user.id, {
+        // Map 'apy' to 'apy_drop' for backwards compatibility with iOS app
+        let notificationType: NotificationType | undefined;
+        if (request.query.type === 'apy') {
+          notificationType = 'apy_drop';
+        } else if (request.query.type) {
+          notificationType = request.query.type as NotificationType;
+        }
+
+        const { notifications, total } = await getNotificationLogsWithCount(request.user.id, {
           limit,
           offset,
           notificationType,
         });
 
-        return reply.send({ notifications: logs });
+        // Map field names for iOS compatibility
+        const mappedNotifications = notifications.map((log) => ({
+          id: log.id,
+          type: log.notificationType === 'apy_drop' ? 'apy' : log.notificationType,
+          severity: log.severity,
+          title: log.title,
+          message: log.message,
+          metadata: {
+            positionId: log.metadata?.positionId ?? null,
+            walletId: log.metadata?.walletId ?? null,
+            symbol: log.metadata?.stablecoin ?? log.metadata?.symbol ?? null,
+            price: log.metadata?.price ?? null,
+            deviation: log.metadata?.deviation ?? null,
+            oldApy: log.metadata?.oldApy ?? null,
+            newApy: log.metadata?.newApy ?? log.metadata?.currentApy ?? null,
+            change: log.metadata?.change ?? null,
+          },
+          createdAt: log.sentAt,
+        }));
+
+        return reply.send({
+          notifications: mappedNotifications,
+          total,
+          hasMore: offset + notifications.length < total,
+        });
       } catch (error) {
         server.log.error(error);
         return reply.code(500).send({ error: 'Failed to fetch notification history' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/notifications/devices
+   * Register an iOS device for push notifications
+   */
+  server.post<{
+    Body: {
+      token: string;
+      platform: 'ios';
+    };
+  }>(
+    '/devices',
+    { preHandler: requireAuth },
+    async (
+      request: FastifyRequest<{
+        Body: {
+          token: string;
+          platform: 'ios';
+        };
+      }>,
+      reply: FastifyReply
+    ) => {
+      if (!request.user) {
+        return reply.code(401).send({ error: 'Not authenticated' });
+      }
+
+      const { token, platform } = request.body;
+
+      // Validate required fields
+      if (!token || !platform) {
+        return reply.code(400).send({ error: 'token and platform are required' });
+      }
+
+      // Validate platform
+      if (platform !== 'ios') {
+        return reply.code(400).send({ error: 'Invalid platform (must be ios)' });
+      }
+
+      // Validate token format (APNs tokens are 64 hex characters)
+      if (!/^[a-fA-F0-9]{64}$/.test(token)) {
+        return reply.code(400).send({ error: 'Invalid token format (must be 64 hex characters)' });
+      }
+
+      try {
+        const device = await createDevice({
+          userId: request.user.id,
+          deviceType: platform as DeviceType,
+          pushToken: token,
+          environment: 'production', // Default to production for iOS
+        });
+
+        return reply.code(201).send({
+          deviceId: device.id,
+        });
+      } catch (error) {
+        server.log.error(error);
+        return reply.code(500).send({ error: 'Failed to register device' });
+      }
+    }
+  );
+
+  /**
+   * DELETE /api/notifications/devices/:deviceId
+   * Unregister a device from push notifications
+   */
+  server.delete<{
+    Params: { deviceId: string };
+  }>(
+    '/devices/:deviceId',
+    { preHandler: requireAuth },
+    async (
+      request: FastifyRequest<{
+        Params: { deviceId: string };
+      }>,
+      reply: FastifyReply
+    ) => {
+      if (!request.user) {
+        return reply.code(401).send({ error: 'Not authenticated' });
+      }
+
+      const { deviceId } = request.params;
+
+      try {
+        // Delete device - idempotent, succeeds even if not found
+        await deleteDevice(deviceId, request.user.id);
+        return reply.code(204).send();
+      } catch (error) {
+        server.log.error(error);
+        return reply.code(500).send({ error: 'Failed to unregister device' });
       }
     }
   );

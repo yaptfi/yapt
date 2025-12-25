@@ -1,7 +1,7 @@
 import apn from 'apn';
 import { getEnvVar } from '../utils/config';
 import { NotificationSeverity } from '../types';
-import { updateDeviceLastUsed } from '../models/device';
+import { updateDeviceLastUsed, deactivateDeviceByToken } from '../models/device';
 
 /**
  * APNs provider instance (singleton)
@@ -138,8 +138,8 @@ export async function sendApnsNotification(params: {
 
       // Handle specific error cases
       if (failure.status === '410' || failure.response?.reason === 'Unregistered') {
-        console.warn(`[APNs] Device token is invalid or unregistered - device should be marked inactive`);
-        // TODO: Mark device as inactive in database
+        console.warn(`[APNs] Device token is invalid or unregistered - marking device as inactive`);
+        await deactivateDeviceByToken(params.deviceToken);
       }
 
       return false;
