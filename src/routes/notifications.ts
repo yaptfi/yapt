@@ -169,15 +169,17 @@ export default async function notificationRoutes(server: FastifyInstance) {
         });
 
         return reply.send({
-          depegEnabled: settings.depegEnabled,
-          depegSeverity: settings.depegSeverity,
-          depegLowerThreshold: settings.depegLowerThreshold,
-          depegUpperThreshold: settings.depegUpperThreshold,
-          depegSymbols: settings.depegSymbols,
-          apyEnabled: settings.apyEnabled,
-          apySeverity: settings.apySeverity,
-          apyThreshold: settings.apyThreshold,
-          ntfyTopic: settings.ntfyTopic,
+          settings: {
+            depegEnabled: settings.depegEnabled,
+            depegSeverity: settings.depegSeverity,
+            depegLowerThreshold: parseFloat(settings.depegLowerThreshold),
+            depegUpperThreshold: settings.depegUpperThreshold ? parseFloat(settings.depegUpperThreshold) : null,
+            depegSymbols: settings.depegSymbols,
+            apyEnabled: settings.apyEnabled,
+            apySeverity: settings.apySeverity,
+            apyThreshold: parseFloat(settings.apyThreshold),
+            ntfyTopic: settings.ntfyTopic,
+          },
         });
       } catch (error) {
         server.log.error(error);
