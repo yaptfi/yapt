@@ -60,4 +60,5 @@ secrets.json
 DEPLOYMENT.md
 
 # Docker Compose local overrides
-docker-compose.override.yml
+docker-compose.override.yml*.p8
+secrets/

@@ -13,3 +13,5 @@ NEXT_STEPS.md
 coverage
 .vscode
 .idea
+*.p8
+secrets/
