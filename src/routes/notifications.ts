@@ -386,7 +386,16 @@ export default async function notificationRoutes(server: FastifyInstance) {
     Params: { deviceId: string };
   }>(
     '/devices/:deviceId',
-    { preHandler: requireAuth },
+    {
+      preHandler: requireAuth,
+      // Handle iOS clients sending Content-Type: application/json with empty body
+      onRequest: async (request) => {
+        if (request.headers['content-type']?.includes('application/json')) {
+          // Remove content-type so Fastify doesn't try to parse empty body as JSON
+          delete request.headers['content-type'];
+        }
+      },
+    },
     async (
       request: FastifyRequest<{
         Params: { deviceId: string };
