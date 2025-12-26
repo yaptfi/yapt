@@ -511,6 +511,11 @@ The backend provides complete API support for native iOS applications with push 
 
 ### **Device Registration for Push Notifications**
 
+**APNs Environment (IMPORTANT):**
+- **Running from Xcode** (debug builds to physical device) → Use `environment: "sandbox"`
+- **TestFlight builds** → Use `environment: "production"`
+- **App Store builds** → Use `environment: "production"`
+
 **Step 1: Request notification permissions in iOS app**
 ```swift
 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
@@ -519,12 +524,11 @@ UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound
 **Step 2: Register device token with backend**
 ```swift
 // After receiving APNs device token from iOS
-POST /api/devices/register
+POST /api/notifications/devices
 {
-  "deviceType": "ios",
-  "pushToken": "<hex_device_token>",
-  "deviceName": "iPhone 15 Pro",
-  "environment": "production"  // or "sandbox" for TestFlight
+  "token": "<64_char_hex_device_token>",
+  "platform": "ios",
+  "environment": "sandbox"  // or "production" for TestFlight/App Store
 }
 ```
 
