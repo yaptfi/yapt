@@ -295,6 +295,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
     Body: {
       token: string;
       platform: 'ios';
+      environment?: 'production' | 'sandbox';
     };
   }>(
     '/devices',
@@ -304,6 +305,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
         Body: {
           token: string;
           platform: 'ios';
+          environment?: 'production' | 'sandbox';
         };
       }>,
       reply: FastifyReply
@@ -312,7 +314,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
         return reply.code(401).send({ error: 'Not authenticated' });
       }
 
-      const { token, platform } = request.body;
+      const { token, platform, environment } = request.body;
 
       // Validate required fields
       if (!token || !platform) {
@@ -334,7 +336,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
           userId: request.user.id,
           deviceType: platform as DeviceType,
           pushToken: token,
-          environment: 'production', // Default to production for iOS
+          environment: environment || 'production', // Default to production for iOS
         });
 
         return reply.code(201).send({
