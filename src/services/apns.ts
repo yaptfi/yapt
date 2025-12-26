@@ -131,17 +131,30 @@ export async function sendApnsNotification(params: {
       notification.payload = params.data;
     }
 
+    // Log send attempt for debugging
+    console.log(`[APNs] Sending notification:`, {
+      tokenLast8: params.deviceToken.slice(-8),
+      tokenLength: params.deviceToken.length,
+      environment: params.environment,
+      bundleId,
+    });
+
     // Send notification
     const result = await provider.send(notification, params.deviceToken);
 
     // Check for errors
     if (result.failed.length > 0) {
       const failure = result.failed[0];
-      console.error(`[APNs] Failed to send notification to device ${params.deviceToken.slice(-8)}:`, failure.response);
+      console.error(`[APNs] Failed to send notification:`, {
+        tokenLast8: params.deviceToken.slice(-8),
+        status: failure.status,
+        reason: failure.response?.reason,
+        response: JSON.stringify(failure.response),
+      });
 
       // Handle specific error cases
       if (failure.status === '410' || failure.response?.reason === 'Unregistered' || failure.response?.reason === 'BadDeviceToken') {
-        console.warn(`[APNs] Device token is invalid or unregistered (${failure.response?.reason}) - marking device as inactive`);
+        console.warn(`[APNs] Token invalid/unregistered - deactivating device token ending in ${params.deviceToken.slice(-8)}`);
         await deactivateDeviceByToken(params.deviceToken);
       }
 
