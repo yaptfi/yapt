@@ -54,6 +54,32 @@ docker compose exec postgres psql -U defi_user -d defi_tracker  # Access databas
 - The Dockerfile uses `npm ci --only=production` which excludes `node-pg-migrate` (devDependency), so migrations can't run inside containers
 - To check if positions were discovered: `docker compose exec postgres psql -U defi_user -d defi_tracker -c "SELECT display_name, base_asset, value_usd FROM position p JOIN position_snapshot ps ON p.id = ps.position_id;"`
 
+### Production Deployment
+
+**Auto-deploy via GitHub Actions:**
+- Pushing to `main` branch triggers automatic deployment via self-hosted runner
+- Deployment directory: `/home/mano/yapt`
+- Uses: `docker compose -f docker-compose.yml -f docker-compose.prod.yml`
+- Migrations run automatically after deployment
+
+**Production compose commands:**
+```bash
+# All production commands use both compose files:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml <command>
+
+# Examples:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs app --tail 50
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec app <command>
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec postgres psql -U defi_user -d defi_tracker
+```
+
+**Production secrets:**
+- APNs key stored at `./secrets/AuthKey_*.p8` (mounted read-only to `/app/secrets/`)
+- Environment variables configured in `.env` file on production server
+
+**IMPORTANT for Claude:** Never suggest `docker compose up -d` alone for production. Always wait for GitHub Actions deployment to complete after pushing, or use the full compose command with both files.
+
 ## Architecture Overview
 
 ### Core Concepts
