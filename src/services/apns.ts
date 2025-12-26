@@ -1,4 +1,4 @@
-import apn from 'apn';
+import apn from '@parse/node-apn';
 import { getEnvVar } from '../utils/config';
 import { NotificationSeverity } from '../types';
 import { updateDeviceLastUsed, deactivateDeviceByToken } from '../models/device';
@@ -153,7 +153,7 @@ export async function sendApnsNotification(params: {
       });
 
       // Handle specific error cases
-      if (failure.status === '410' || failure.response?.reason === 'Unregistered' || failure.response?.reason === 'BadDeviceToken') {
+      if (failure.status === 410 || failure.response?.reason === 'Unregistered' || failure.response?.reason === 'BadDeviceToken') {
         console.warn(`[APNs] Token invalid/unregistered - deactivating device token ending in ${params.deviceToken.slice(-8)}`);
         await deactivateDeviceByToken(params.deviceToken);
       }
