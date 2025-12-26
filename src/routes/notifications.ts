@@ -223,7 +223,15 @@ export default async function notificationRoutes(server: FastifyInstance) {
    */
   server.delete(
     '/settings',
-    { preHandler: requireAuth },
+    {
+      preHandler: requireAuth,
+      // Handle iOS clients sending Content-Type: application/json with empty body
+      onRequest: async (request) => {
+        if (request.headers['content-type']?.includes('application/json')) {
+          delete request.headers['content-type'];
+        }
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!request.user) {
         return reply.code(401).send({ error: 'Not authenticated' });
