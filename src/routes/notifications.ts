@@ -365,18 +365,108 @@ export default async function notificationRoutes(server: FastifyInstance) {
       reply: FastifyReply
     ) => {
       if (!request.user) {
+        server.log.error('[DELETE /devices/:deviceId] Not authenticated');
         return reply.code(401).send({ error: 'Not authenticated' });
       }
 
       const { deviceId } = request.params;
 
+      // Log for debugging
+      server.log.info(`[DELETE /devices/:deviceId] Attempting to delete device ${deviceId} for user ${request.user.id}`);
+
+      // Validate deviceId format
+      if (!deviceId || typeof deviceId !== 'string') {
+        server.log.error(`[DELETE /devices/:deviceId] Invalid deviceId format: ${deviceId}`);
+        return reply.code(400).send({ error: 'Invalid device ID' });
+      }
+
       try {
         // Delete device - idempotent, succeeds even if not found
-        await deleteDevice(deviceId, request.user.id);
+        const deleted = await deleteDevice(deviceId, request.user.id);
+        server.log.info(`[DELETE /devices/:deviceId] Device ${deviceId} deleted: ${deleted}`);
         return reply.code(204).send();
       } catch (error) {
-        server.log.error(error);
+        server.log.error(`[DELETE /devices/:deviceId] Error deleting device:`, error);
         return reply.code(500).send({ error: 'Failed to unregister device' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/notifications/test
+   * Send a test notification to all registered devices
+   */
+  server.post(
+    '/test',
+    { preHandler: requireAuth },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.user) {
+        return reply.code(401).send({ error: 'Not authenticated' });
+      }
+
+      try {
+        // Import device and notification services
+        const { getActiveDevices } = await import('../models/device');
+        const { sendApnsNotification } = await import('../services/apns');
+
+        // Get user's active devices
+        const devices = await getActiveDevices(request.user.id);
+
+        if (devices.length === 0) {
+          return reply.send({
+            message: 'No active devices registered',
+            sent: 0,
+            failed: 0,
+          });
+        }
+
+        // Send test notification to each device
+        let sent = 0;
+        let failed = 0;
+
+        for (const device of devices) {
+          if (device.deviceType !== 'ios' || !device.pushToken) {
+            server.log.warn(`[Test Notification] Skipping device ${device.id} - not iOS or no token`);
+            failed++;
+            continue;
+          }
+
+          const success = await sendApnsNotification({
+            deviceToken: device.pushToken,
+            deviceId: device.id,
+            environment: (device.environment as 'production' | 'sandbox') || 'production',
+            title: 'Test Notification',
+            message: 'This is a test notification from Yapt. If you see this, push notifications are working!',
+            severity: 'default',
+            data: {
+              type: 'test',
+              timestamp: new Date().toISOString(),
+            },
+          });
+
+          if (success) {
+            sent++;
+            server.log.info(`[Test Notification] Successfully sent to device ${device.id}`);
+          } else {
+            failed++;
+            server.log.warn(`[Test Notification] Failed to send to device ${device.id}`);
+          }
+        }
+
+        return reply.send({
+          message: `Test notification sent to ${devices.length} device(s)`,
+          sent,
+          failed,
+          devices: devices.map((d) => ({
+            id: d.id,
+            type: d.deviceType,
+            name: d.deviceName,
+            environment: d.environment,
+          })),
+        });
+      } catch (error) {
+        server.log.error('[Test Notification] Error:', error);
+        return reply.code(500).send({ error: 'Failed to send test notification' });
       }
     }
   );
