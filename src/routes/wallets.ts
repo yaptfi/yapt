@@ -290,7 +290,15 @@ export default async function walletRoutes(server: FastifyInstance) {
    */
   server.delete<{ Params: { id: string } }>(
     '/:id',
-    { preHandler: requireAuth },
+    {
+      preHandler: requireAuth,
+      // Handle iOS clients sending Content-Type: application/json with empty body
+      onRequest: async (request) => {
+        if (request.headers['content-type']?.includes('application/json')) {
+          delete request.headers['content-type'];
+        }
+      },
+    },
     async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       if (!request.user) {
         return reply.code(401).send({ error: 'Authentication required' });
