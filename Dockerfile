@@ -30,6 +30,7 @@ COPY --from=builder /app/dist ./dist
 # Copy configuration files
 COPY config ./config
 COPY migrations ./migrations
+COPY scripts ./scripts
 # Frontend is served separately from `frontend/` during development
 COPY .node-pg-migrate.config.js ./
 # Copy frontend assets to serve in-container
