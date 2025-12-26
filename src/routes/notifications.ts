@@ -10,6 +10,18 @@ import { createDevice, deleteDevice } from '../models/device';
 import { NotificationSeverity, NotificationType, DeviceType } from '../types';
 
 export default async function notificationRoutes(server: FastifyInstance) {
+  // Add request logging hook for all /devices routes (visible in production)
+  server.addHook('onRequest', async (request) => {
+    if (request.url.includes('/devices')) {
+      server.log.warn({
+        method: request.method,
+        url: request.url,
+        params: (request as any).params,
+        userId: (request as any).user?.id,
+      }, '[Devices] Incoming request');
+    }
+  });
+
   /**
    * GET /api/notifications/settings
    * Get notification settings for current user
@@ -371,8 +383,8 @@ export default async function notificationRoutes(server: FastifyInstance) {
 
       const { deviceId } = request.params;
 
-      // Log for debugging
-      server.log.info(`[DELETE /devices/:deviceId] Attempting to delete device ${deviceId} for user ${request.user.id}`);
+      // Log for debugging (use warn level so it appears in production logs)
+      server.log.warn(`[DELETE /devices/:deviceId] Attempting to delete device ${deviceId} for user ${request.user.id}`);
 
       // Validate deviceId format
       if (!deviceId || typeof deviceId !== 'string') {
@@ -383,7 +395,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
       try {
         // Delete device - idempotent, succeeds even if not found
         const deleted = await deleteDevice(deviceId, request.user.id);
-        server.log.info(`[DELETE /devices/:deviceId] Device ${deviceId} deleted: ${deleted}`);
+        server.log.warn(`[DELETE /devices/:deviceId] Device ${deviceId} deleted: ${deleted}`);
         return reply.code(204).send();
       } catch (error) {
         server.log.error(error, '[DELETE /devices/:deviceId] Error deleting device');
@@ -446,7 +458,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
 
           if (success) {
             sent++;
-            server.log.info(`[Test Notification] Successfully sent to device ${device.id}`);
+            server.log.warn(`[Test Notification] Successfully sent to device ${device.id}`);
           } else {
             failed++;
             server.log.warn(`[Test Notification] Failed to send to device ${device.id}`);
