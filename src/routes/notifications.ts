@@ -386,7 +386,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
         server.log.info(`[DELETE /devices/:deviceId] Device ${deviceId} deleted: ${deleted}`);
         return reply.code(204).send();
       } catch (error) {
-        server.log.error(`[DELETE /devices/:deviceId] Error deleting device:`, error);
+        server.log.error(error, '[DELETE /devices/:deviceId] Error deleting device');
         return reply.code(500).send({ error: 'Failed to unregister device' });
       }
     }
@@ -465,7 +465,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
           })),
         });
       } catch (error) {
-        server.log.error('[Test Notification] Error:', error);
+        server.log.error(error, '[Test Notification] Error sending test notification');
         return reply.code(500).send({ error: 'Failed to send test notification' });
       }
     }
