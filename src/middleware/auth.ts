@@ -6,10 +6,14 @@ import { getUserById } from '../models/user';
  * Checks if user is authenticated and attaches user to request
  */
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply) {
+  // Log for debugging (use console.warn so it appears in production)
+  console.warn(`[requireAuth] ${request.method} ${request.url} - session exists: ${!!request.session}, userId in session: ${request.session?.userId || 'none'}`);
+
   // Check if user ID is in session
   const userId = request.session.userId;
 
   if (!userId) {
+    console.warn(`[requireAuth] No userId in session - returning 401`);
     return reply.code(401).send({ error: 'Authentication required' });
   }
 
@@ -17,12 +21,14 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
   const user = await getUserById(userId);
 
   if (!user) {
+    console.warn(`[requireAuth] User ${userId} not found in database - returning 401`);
     // User ID in session but user doesn't exist - destroy session without blocking
     // Don't await to avoid hanging on Redis operations
     request.session.destroy(() => {});
     return reply.code(401).send({ error: 'User not found' });
   }
 
+  console.warn(`[requireAuth] User ${userId} authenticated successfully`);
   // Attach user to request for use in route handlers
   request.user = user;
 }

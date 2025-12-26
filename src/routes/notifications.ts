@@ -18,7 +18,24 @@ export default async function notificationRoutes(server: FastifyInstance) {
         url: request.url,
         params: (request as any).params,
         userId: (request as any).user?.id,
+        headers: {
+          cookie: request.headers.cookie ? 'present' : 'missing',
+          contentType: request.headers['content-type'],
+        },
       }, '[Devices] Incoming request');
+    }
+  });
+
+  // Add error logging hook for debugging
+  server.addHook('onError', async (request, reply, error) => {
+    if (request.url.includes('/devices')) {
+      server.log.error({
+        method: request.method,
+        url: request.url,
+        statusCode: reply.statusCode,
+        error: error.message,
+        stack: error.stack,
+      }, '[Devices] Request error');
     }
   });
 
