@@ -117,17 +117,10 @@ export class PendlePtAdapter extends BaseProtocolAdapter {
 
   /**
    * Fetch PT price from Pendle API
-   * Returns $1.00 if matured, 0.95 fallback on API failure
+   * Always tries API first, falls back to $1.00 if matured or $0.95 otherwise
    */
   private async getPtPrice(ptToken: string, maturityDate?: string): Promise<number> {
-    // Check if matured - PT is redeemable 1:1 after maturity
-    if (maturityDate) {
-      const maturity = new Date(maturityDate);
-      if (Date.now() >= maturity.getTime()) {
-        console.log(`${this.protocolName}: PT matured on ${maturityDate}, using $1.00`);
-        return 1.0;
-      }
-    }
+    const isMatured = maturityDate && Date.now() >= new Date(maturityDate).getTime();
 
     try {
       const url = `${PendlePtAdapter.PENDLE_API_BASE}/prices/assets?ids=${PendlePtAdapter.CHAIN_ID}-${ptToken.toLowerCase()}`;
@@ -140,8 +133,8 @@ export class PendlePtAdapter extends BaseProtocolAdapter {
       });
 
       if (!response.ok) {
-        console.warn(`${this.protocolName}: Pendle API returned ${response.status}, using fallback price`);
-        return 0.95; // Conservative fallback
+        console.warn(`${this.protocolName}: Pendle API returned ${response.status}`);
+        return isMatured ? 1.0 : 0.95;
       }
 
       const data = (await response.json()) as { prices: Record<string, number> };
@@ -151,14 +144,19 @@ export class PendlePtAdapter extends BaseProtocolAdapter {
       const price = data.prices?.[key];
 
       if (typeof price === 'number' && price > 0) {
-        return price;
+        // Cap at $1.00 - PT can't exceed redemption value
+        const finalPrice = Math.min(price, 1.0);
+        console.log(
+          `${this.protocolName}: API price $${price.toFixed(4)}${price > 1.0 ? ' (capped to $1.00)' : ''}`
+        );
+        return finalPrice;
       }
 
-      console.warn(`${this.protocolName}: Price not found in Pendle API response, using fallback`);
-      return 0.95;
+      console.warn(`${this.protocolName}: Price not found in API response`);
+      return isMatured ? 1.0 : 0.95;
     } catch (error) {
-      console.error(`${this.protocolName}: Failed to fetch price from Pendle API:`, error);
-      return 0.95; // Conservative fallback on any error
+      console.error(`${this.protocolName}: Failed to fetch price:`, error);
+      return isMatured ? 1.0 : 0.95;
     }
   }
 }
