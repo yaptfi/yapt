@@ -8,6 +8,7 @@ import { ConvexCurveVaultAdapter } from './convex-curve-vault';
 import { InfinifiSiusdAdapter } from './infinifi-siusd';
 import { YearnV3Adapter } from './yearn-v3';
 import { UniswapV4Adapter } from './uniswap-v4';
+import { PendlePtAdapter } from './pendle-pt';
 import { ProtocolKey } from '../types';
 
 // Registry of all protocol adapters
@@ -39,4 +40,5 @@ export {
   InfinifiSiusdAdapter,
   YearnV3Adapter,
   UniswapV4Adapter,
+  PendlePtAdapter,
 };

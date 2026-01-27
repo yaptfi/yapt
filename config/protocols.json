@@ -267,5 +267,15 @@
     "type": "aave-umbrella",
     "countingMode": "count",
     "abiKeys": ["ERC20", "AaveUmbrellaStakeToken", "AaveRewardsController", "ERC4626"]
+  },
+  "pendle-pt-reusde-jun25": {
+    "name": "Pendle PT reUSDe (Jun 2025)",
+    "ptToken": "0xdc9a5a2e3ce7ac881fc3b28c629c05d1617d1c56",
+    "decimals": 18,
+    "maturityDate": "2025-06-25T00:00:00.000Z",
+    "baseAsset": "USDe",
+    "type": "pendle-pt",
+    "countingMode": "count",
+    "abiKeys": ["ERC20"]
   }
 }

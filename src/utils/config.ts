@@ -52,6 +52,7 @@ export function getStablePriceOverrides(): Record<string, number> {
       crvUSD: 1.0,
       iUSD: 1.0,
       REUSD: 1.0,
+      USDe: 1.0,
     };
   }
 
@@ -67,6 +68,7 @@ export function getStablePriceOverrides(): Record<string, number> {
       crvUSD: 1.0,
       iUSD: 1.0,
       REUSD: 1.0,
+      USDe: 1.0,
     };
   }
 }

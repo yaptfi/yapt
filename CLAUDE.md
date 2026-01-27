@@ -12,28 +12,50 @@ This is a DeFi passive income tracker that automatically discovers and tracks yi
 
 **User Management**: Implemented using WebAuthn (passkeys) for passwordless authentication. Each user can register with a username and passkey, add multiple devices, and only sees their own wallets and positions. Session-based authentication with secure HTTP-only cookies.
 
-## Development Commands
+## Important: Docker-First Development
+
+**IMPORTANT for Claude:** Always provide Docker-based commands when suggesting how to run, test, or deploy this application. The project uses Docker Compose for both local development and production. Never suggest running `npm run dev` directly on the host unless specifically asked for non-Docker instructions.
+
+## Development Commands (Docker)
 
 ```bash
-# Development
+# Start all services (PostgreSQL + Redis + App)
+docker compose up -d
+
+# Rebuild and restart after code changes
+docker compose up -d --build
+
+# Run migrations (uses builder stage with dev dependencies)
+docker compose run --rm migrations
+
+# View logs
+docker compose logs app --tail 50
+docker compose logs -f app  # Follow logs
+
+# Stop all services
+docker compose down
+
+# Access database
+docker compose exec postgres psql -U defi_user -d defi_tracker
+
+# Run TypeScript check inside container
+docker compose exec app npm run typecheck
+
+# Run tests inside container
+docker compose exec app npm test
+```
+
+### Development Commands (Non-Docker, if needed)
+
+```bash
 npm run dev              # Start server with hot reload (tsx watch)
 npm run build           # Compile TypeScript to dist/
 npm start               # Run production build
-
-# Database
 npm run migrate         # Run pending migrations
 npm run migrate:down    # Rollback last migration
-
-# Testing & Quality
 npm test                # Run Jest tests
 npm run typecheck       # Run TypeScript compiler without emit
 npm run lint            # Run ESLint on src/
-
-# Docker (recommended for local development)
-docker compose up -d    # Start PostgreSQL + Redis + app
-docker compose down     # Stop all services
-docker compose logs app --tail 50  # Check app logs
-docker compose exec postgres psql -U defi_user -d defi_tracker  # Access database
 ```
 
 ### Docker Setup Notes
@@ -45,22 +67,54 @@ docker compose exec postgres psql -U defi_user -d defi_tracker  # Access databas
    - `DATABASE_URL`, `REDIS_URL` - Already configured for Docker
 2. Start Docker Desktop
 3. Run `docker compose up -d`
-4. **Important**: Migrations must be run manually from host machine (the migrations container has a missing dependency issue):
-   ```bash
-   DATABASE_URL=postgresql://defi_user:defi_password@localhost:5432/defi_tracker npm run migrate
-   ```
+4. Run migrations: `docker compose run --rm migrations`
 
-**Known Issues:**
-- The Dockerfile uses `npm ci --only=production` which excludes `node-pg-migrate` (devDependency), so migrations can't run inside containers
-- To check if positions were discovered: `docker compose exec postgres psql -U defi_user -d defi_tracker -c "SELECT display_name, base_asset, value_usd FROM position p JOIN position_snapshot ps ON p.id = ps.position_id;"`
+**Deploying code changes locally:**
+```bash
+# After making code changes, rebuild and restart:
+docker compose up -d --build
+
+# Run any new migrations:
+docker compose run --rm migrations
+
+# Verify the app is running:
+docker compose logs app --tail 20
+```
+
+**Useful commands:**
+```bash
+# Check if positions were discovered:
+docker compose exec postgres psql -U defi_user -d defi_tracker -c \
+  "SELECT display_name, base_asset, value_usd FROM position p JOIN position_snapshot ps ON p.id = ps.position_id;"
+
+# Check registered protocols:
+docker compose exec postgres psql -U defi_user -d defi_tracker -c \
+  "SELECT key, name FROM protocol ORDER BY key;"
+```
 
 ### Production Deployment
 
-**Auto-deploy via GitHub Actions:**
+**Auto-deploy via GitHub Actions (recommended):**
 - Pushing to `main` branch triggers automatic deployment via self-hosted runner
 - Deployment directory: `/home/mano/yapt`
 - Uses: `docker compose -f docker-compose.yml -f docker-compose.prod.yml`
 - Migrations run automatically after deployment
+
+**Manual production deployment (if needed):**
+```bash
+# SSH to production server, then:
+cd /home/mano/yapt
+git pull origin main
+
+# Rebuild and restart with production config:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# Run migrations:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm migrations
+
+# Check logs:
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs app --tail 50
+```
 
 **Production compose commands:**
 ```bash
@@ -78,7 +132,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec postgres ps
 - APNs key stored at `./secrets/AuthKey_*.p8` (mounted read-only to `/app/secrets/`)
 - Environment variables configured in `.env` file on production server
 
-**IMPORTANT for Claude:** Never suggest `docker compose up -d` alone for production. Always wait for GitHub Actions deployment to complete after pushing, or use the full compose command with both files.
+**IMPORTANT for Claude:** Never suggest `docker compose up -d` alone for production. Always use the full compose command with both files, or recommend pushing to `main` for automatic deployment.
 
 ## Architecture Overview
 
