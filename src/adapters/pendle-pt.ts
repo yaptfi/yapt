@@ -10,10 +10,14 @@ import { getProtocolConfig, getAbi } from '../utils/config';
  * to par ($1.00) at maturity. They represent principal-only exposure to
  * yield-bearing assets.
  *
- * Value calculation:
+ * Value calculation (fixed-income accrual method):
  * - Get PT balance via ERC20 balanceOf()
- * - Fetch current USD price from Pendle API
- * - After maturity: PT = $1.00 (redeemable 1:1)
+ * - On discovery: fetch initial PT price from Pendle API and store in metadata
+ * - On updates: calculate accrued value using linear interpolation between
+ *   discovery price and $1.00 at maturity
+ * - This avoids volatile market price fluctuations triggering false resets
+ *
+ * The "yield" is the discount captured at purchase, accruing linearly to maturity.
  *
  * This adapter is config-driven - each PT token gets its own protocol key
  * but uses the same adapter logic (same pattern as YearnV3Adapter).
@@ -50,18 +54,29 @@ export class PendlePtAdapter extends BaseProtocolAdapter {
       if (balance > 0n) {
         const positionKey = this.createPositionKey(config.ptToken, config.baseAsset);
 
+        // Fetch initial PT price for accrual calculation baseline
+        const initialPtPrice = await this.getPtPrice(config.ptToken, config.maturityDate);
+        const discoveryTime = new Date().toISOString();
+
+        console.log(
+          `${this.protocolName}: Discovered position with initial PT price $${initialPtPrice.toFixed(4)} at ${discoveryTime}`
+        );
+
         positions.push({
           protocolPositionKey: positionKey,
           displayName: config.name,
           baseAsset: config.baseAsset,
           countingMode: config.countingMode || 'count',
-          measureMethod: 'balance', // PT tokens use simple balance * price
+          measureMethod: 'fixed-income', // Use linear accrual method
           metadata: {
             walletAddress: checksumAddress,
             ptToken: config.ptToken,
             tokenAddress: config.ptToken, // For exit detection compatibility
             decimals: config.decimals ?? 18,
             maturityDate: config.maturityDate,
+            // Fixed-income accrual fields
+            initialPtPrice, // PT price at discovery (e.g., 0.95)
+            discoveryTime, // When position was discovered
           },
           isActive: true,
         });
@@ -74,7 +89,7 @@ export class PendlePtAdapter extends BaseProtocolAdapter {
   }
 
   async readCurrentValue(position: Position): Promise<number> {
-    const { ptToken, decimals, walletAddress, maturityDate } = position.metadata;
+    const { ptToken, decimals, walletAddress, maturityDate, initialPtPrice, discoveryTime } = position.metadata;
 
     if (!ptToken || decimals === undefined || !walletAddress) {
       throw new Error(`Invalid ${this.protocolKey} position metadata`);
@@ -105,14 +120,65 @@ export class PendlePtAdapter extends BaseProtocolAdapter {
 
     const tokenAmount = parseFloat(formatUnits(balance, decimals));
 
-    // Get price from Pendle API (or use $1.00 if matured)
-    const priceUsd = await this.getPtPrice(ptToken, maturityDate);
-
-    console.log(
-      `${this.protocolName}: ${tokenAmount.toFixed(2)} PT @ $${priceUsd.toFixed(4)} = $${(tokenAmount * priceUsd).toFixed(2)}`
+    // Calculate accrued value using linear interpolation
+    const accruedPrice = this.calculateAccruedPrice(
+      initialPtPrice,
+      discoveryTime,
+      maturityDate
     );
 
-    return tokenAmount * priceUsd;
+    console.log(
+      `${this.protocolName}: ${tokenAmount.toFixed(2)} PT @ $${accruedPrice.toFixed(4)} (accrued) = $${(tokenAmount * accruedPrice).toFixed(2)}`
+    );
+
+    return tokenAmount * accruedPrice;
+  }
+
+  /**
+   * Calculate the accrued PT price using linear interpolation
+   *
+   * The price accrues linearly from initialPtPrice at discoveryTime to $1.00 at maturityDate.
+   * This represents the "earned" portion of the fixed-income yield.
+   *
+   * @param initialPtPrice - PT price at discovery (e.g., 0.95)
+   * @param discoveryTime - ISO timestamp when position was discovered
+   * @param maturityDate - ISO timestamp when PT matures (redeemable at $1.00)
+   * @returns Current accrued price (between initialPtPrice and 1.00)
+   */
+  private calculateAccruedPrice(
+    initialPtPrice: number | undefined,
+    discoveryTime: string | undefined,
+    maturityDate: string | undefined
+  ): number {
+    // If missing metadata, fall back to $1.00 (conservative estimate)
+    if (!initialPtPrice || !discoveryTime || !maturityDate) {
+      console.warn(`${this.protocolName}: Missing accrual metadata, using $1.00`);
+      return 1.0;
+    }
+
+    const now = Date.now();
+    const discovery = new Date(discoveryTime).getTime();
+    const maturity = new Date(maturityDate).getTime();
+
+    // If already matured, return $1.00
+    if (now >= maturity) {
+      return 1.0;
+    }
+
+    // If somehow before discovery (shouldn't happen), return initial price
+    if (now <= discovery) {
+      return initialPtPrice;
+    }
+
+    // Linear interpolation: price = initial + (1 - initial) * (elapsed / total)
+    const totalDuration = maturity - discovery;
+    const elapsed = now - discovery;
+    const progress = elapsed / totalDuration;
+
+    const accruedPrice = initialPtPrice + (1.0 - initialPtPrice) * progress;
+
+    // Cap at $1.00 (PT can't exceed redemption value)
+    return Math.min(accruedPrice, 1.0);
   }
 
   /**

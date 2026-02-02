@@ -124,11 +124,12 @@ export async function updatePosition(position: Position): Promise<void> {
     // CASE 4: Check for significant value changes (partial exit or addition)
     // Value changed >0.1% → must be deposit/withdrawal (no yield can be that high in 1 hour)
     // 0.1% threshold provides safety margin above observed natural volatility (fxSAVE: 0.059% worst case)
+    // Skip this check for fixed-income positions which use accrual-based valuation (no market volatility)
     const previousValue = parseFloat(latestSnapshot.value_usd);
     const valueChange = currentValue - previousValue;
     const relativeChange = Math.abs(valueChange) / Math.max(previousValue, 1);
 
-    if (relativeChange > 0.001) {
+    if (position.measureMethod !== 'fixed-income' && relativeChange > 0.001) {
       const changeType = valueChange > 0 ? 'addition' : 'exit';
       console.log(
         `  Significant ${changeType} detected: ` +

@@ -1,5 +1,5 @@
 export type CountingMode = 'count' | 'partial' | 'ignore';
-export type MeasureMethod = 'exchangeRate' | 'balance' | 'rebaseIndex' | 'subgraph' | 'rewards' | 'lp-position';
+export type MeasureMethod = 'exchangeRate' | 'balance' | 'rebaseIndex' | 'subgraph' | 'rewards' | 'lp-position' | 'fixed-income';
 export type ProtocolKey = string;
 
 export interface User {
