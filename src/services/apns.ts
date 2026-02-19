@@ -226,9 +226,11 @@ export async function sendApnsApyDropNotification(params: {
   currentApy: number;
   threshold: number;
   severity: NotificationSeverity;
+  apyWindow?: string;
 }): Promise<boolean> {
+  const windowLabel = params.apyWindow === '4h' ? '4h' : '7d';
   const title = `Low APY: ${params.positionName}`;
-  const message = `4h APY dropped to ${(params.currentApy * 100).toFixed(2)}%, below ${(params.threshold * 100).toFixed(2)}%`;
+  const message = `${windowLabel} APY dropped to ${(params.currentApy * 100).toFixed(2)}%, below ${(params.threshold * 100).toFixed(2)}%`;
 
   return sendApnsNotification({
     deviceToken: params.deviceToken,
@@ -243,6 +245,7 @@ export async function sendApnsApyDropNotification(params: {
       positionName: params.positionName,
       currentApy: params.currentApy,
       threshold: params.threshold,
+      apyWindow: params.apyWindow || '7d',
     },
   });
 }

@@ -141,10 +141,12 @@ export async function sendApyDropNotification(params: {
   currentApy: number;
   threshold: number;
   severity: NotificationSeverity;
+  apyWindow?: string;
   dashboardUrl?: string;
 }): Promise<boolean> {
+  const windowLabel = params.apyWindow === '4h' ? '4h' : '7d';
   const title = `Low APY Alert: ${params.positionName}`;
-  const message = `4h APY dropped to ${(params.currentApy * 100).toFixed(2)}%, below your threshold of ${(params.threshold * 100).toFixed(2)}%`;
+  const message = `${windowLabel} APY dropped to ${(params.currentApy * 100).toFixed(2)}%, below your threshold of ${(params.threshold * 100).toFixed(2)}%`;
 
   const actions = params.dashboardUrl
     ? [

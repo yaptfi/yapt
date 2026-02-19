@@ -7,7 +7,7 @@ import {
 } from '../models/notificationSettings';
 import { getNotificationLogsWithCount } from '../models/notificationLog';
 import { createDevice, deleteDevice } from '../models/device';
-import { NotificationSeverity, NotificationType, DeviceType } from '../types';
+import { NotificationSeverity, NotificationType, DeviceType, ApyWindow } from '../types';
 
 export default async function notificationRoutes(server: FastifyInstance) {
   // Add request logging hook for all /devices routes (visible in production)
@@ -66,6 +66,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
               apyEnabled: false,
               apySeverity: 'default',
               apyThreshold: 0.01,
+              apyWindow: '7d',
               ntfyTopic: null,
             },
           });
@@ -81,6 +82,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
             apyEnabled: settings.apyEnabled,
             apySeverity: settings.apySeverity,
             apyThreshold: parseFloat(settings.apyThreshold),
+            apyWindow: settings.apyWindow,
             ntfyTopic: settings.ntfyTopic,
           },
         });
@@ -105,6 +107,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
       apyEnabled?: boolean;
       apySeverity?: NotificationSeverity;
       apyThreshold?: string;
+      apyWindow?: ApyWindow;
     };
   }>(
     '/settings',
@@ -120,6 +123,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
           apyEnabled?: boolean;
           apySeverity?: NotificationSeverity;
           apyThreshold?: string;
+          apyWindow?: ApyWindow;
         };
       }>,
       reply: FastifyReply
@@ -134,6 +138,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
         depegUpperThreshold,
         apyEnabled,
         apyThreshold,
+        apyWindow,
       } = request.body;
 
       let { depegSeverity, apySeverity, depegSymbols } = request.body;
@@ -173,6 +178,14 @@ export default async function notificationRoutes(server: FastifyInstance) {
         }
       }
 
+      // Validate apyWindow if provided
+      if (apyWindow !== undefined) {
+        const validWindows: ApyWindow[] = ['4h', '7d'];
+        if (!validWindows.includes(apyWindow)) {
+          return reply.code(400).send({ error: 'Invalid APY window (must be "4h" or "7d")' });
+        }
+      }
+
       // Validate depegSymbols if provided
       if (depegSymbols !== undefined && depegSymbols !== null) {
         if (!Array.isArray(depegSymbols)) {
@@ -195,6 +208,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
           apyEnabled,
           apySeverity,
           apyThreshold,
+          apyWindow,
         });
 
         return reply.send({
@@ -207,6 +221,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
             apyEnabled: settings.apyEnabled,
             apySeverity: settings.apySeverity,
             apyThreshold: parseFloat(settings.apyThreshold),
+            apyWindow: settings.apyWindow,
             ntfyTopic: settings.ntfyTopic,
           },
         });

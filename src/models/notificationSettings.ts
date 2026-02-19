@@ -1,5 +1,5 @@
 import { query, queryOne } from '../utils/db';
-import { NotificationSettings, NotificationSeverity } from '../types';
+import { NotificationSettings, NotificationSeverity, ApyWindow } from '../types';
 import { randomBytes } from 'crypto';
 
 /**
@@ -18,6 +18,7 @@ export async function getNotificationSettings(userId: string): Promise<Notificat
       apy_enabled as "apyEnabled",
       apy_severity as "apySeverity",
       apy_threshold::text as "apyThreshold",
+      apy_window as "apyWindow",
       ntfy_topic as "ntfyTopic",
       created_at as "createdAt",
       updated_at as "updatedAt"
@@ -43,6 +44,7 @@ export async function getAllNotificationSettings(): Promise<NotificationSettings
       apy_enabled as "apyEnabled",
       apy_severity as "apySeverity",
       apy_threshold::text as "apyThreshold",
+      apy_window as "apyWindow",
       ntfy_topic as "ntfyTopic",
       created_at as "createdAt",
       updated_at as "updatedAt"
@@ -97,6 +99,7 @@ export async function upsertNotificationSettings(
     apyEnabled?: boolean;
     apySeverity?: NotificationSeverity;
     apyThreshold?: string;
+    apyWindow?: ApyWindow;
   }
 ): Promise<NotificationSettings> {
   // Auto-generate ntfy topic if enabling notifications for the first time
@@ -124,20 +127,22 @@ export async function upsertNotificationSettings(
       apy_enabled,
       apy_severity,
       apy_threshold,
+      apy_window,
       ntfy_topic
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     ON CONFLICT (user_id)
     DO UPDATE SET
       depeg_enabled = COALESCE($2, notification_settings.depeg_enabled),
       depeg_severity = COALESCE($3, notification_settings.depeg_severity),
       depeg_lower_threshold = COALESCE($4, notification_settings.depeg_lower_threshold),
       depeg_upper_threshold = CASE WHEN $5 IS NOT NULL THEN $5::numeric ELSE notification_settings.depeg_upper_threshold END,
-      depeg_symbols = CASE WHEN $11::boolean IS TRUE THEN $6 ELSE notification_settings.depeg_symbols END,
+      depeg_symbols = CASE WHEN $12::boolean IS TRUE THEN $6 ELSE notification_settings.depeg_symbols END,
       apy_enabled = COALESCE($7, notification_settings.apy_enabled),
       apy_severity = COALESCE($8, notification_settings.apy_severity),
       apy_threshold = COALESCE($9, notification_settings.apy_threshold),
-      ntfy_topic = COALESCE($10, notification_settings.ntfy_topic),
+      apy_window = COALESCE($10, notification_settings.apy_window),
+      ntfy_topic = COALESCE($11, notification_settings.ntfy_topic),
       updated_at = NOW()
     RETURNING
       id,
@@ -150,6 +155,7 @@ export async function upsertNotificationSettings(
       apy_enabled as "apyEnabled",
       apy_severity as "apySeverity",
       apy_threshold::text as "apyThreshold",
+      apy_window as "apyWindow",
       ntfy_topic as "ntfyTopic",
       created_at as "createdAt",
       updated_at as "updatedAt"`,
@@ -163,6 +169,7 @@ export async function upsertNotificationSettings(
       data.apyEnabled,
       normalizedApySeverity,
       data.apyThreshold,
+      data.apyWindow,
       ntfyTopic,
       depegSymbolsProvided,
     ]

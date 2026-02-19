@@ -82,6 +82,12 @@ async function loadSettings() {
     document.getElementById('apySeverity').value = settings.apySeverity || 'default';
     document.getElementById('apyThreshold').value = (parseFloat(settings.apyThreshold || '0.01') * 100).toFixed(2);
 
+    // Set APY window radio button
+    const apyWindow = settings.apyWindow || '7d';
+    const apyWindowRadio = document.querySelector(`input[name="apyWindow"][value="${apyWindow}"]`);
+    if (apyWindowRadio) apyWindowRadio.checked = true;
+    updateApyWindowLabel(apyWindow);
+
     // Populate depeg stablecoin checkboxes
     renderStablecoinSelector(stablecoins, settings.depegSymbols);
 
@@ -98,6 +104,13 @@ async function loadSettings() {
 
     document.getElementById('apyEnabled').addEventListener('change', (e) => {
       document.getElementById('apySettings').style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    // Update threshold label when APY window changes
+    document.querySelectorAll('input[name="apyWindow"]').forEach((radio) => {
+      radio.addEventListener('change', (e) => {
+        updateApyWindowLabel(e.target.value);
+      });
     });
 
     // Trigger initial state
@@ -176,6 +189,7 @@ async function saveSettings(event) {
     apyEnabled: document.getElementById('apyEnabled').checked,
     apySeverity: document.getElementById('apySeverity').value,
     apyThreshold: (parseFloat(document.getElementById('apyThreshold').value) / 100).toString(), // Convert % to decimal
+    apyWindow: document.querySelector('input[name="apyWindow"]:checked')?.value || '7d',
   };
 
   try {
@@ -229,6 +243,12 @@ async function saveSettings(event) {
     saveBtn.disabled = false;
     saveBtn.textContent = 'Save Settings';
   }
+}
+
+// Update APY threshold label to reflect selected window
+function updateApyWindowLabel(window) {
+  const label = document.getElementById('apyWindowLabel');
+  if (label) label.textContent = window === '4h' ? '4h' : '7d';
 }
 
 // Load notification history

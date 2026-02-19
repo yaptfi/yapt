@@ -208,6 +208,7 @@ declare module 'fastify' {
 // Notification types
 export type NotificationSeverity = 'min' | 'low' | 'default' | 'high' | 'urgent';
 export type NotificationType = 'depeg' | 'apy_drop';
+export type ApyWindow = '4h' | '7d';
 
 export interface NotificationSettings {
   id: string;
@@ -220,6 +221,7 @@ export interface NotificationSettings {
   apyEnabled: boolean;
   apySeverity: NotificationSeverity;
   apyThreshold: string; // Numeric as string
+  apyWindow: ApyWindow;
   ntfyTopic: string | null;
   createdAt: Date;
   updatedAt: Date;

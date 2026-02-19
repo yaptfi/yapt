@@ -7,8 +7,9 @@ import { fetchStablecoinPrices, isDepegged } from './stablecoinPriceMonitor';
 import { getActivePositionsByWallets } from '../models/position';
 import { get4hApyValues } from '../models/snapshot';
 import { compute4hApy } from '../utils/apy';
+import { getPositionMetrics } from './update';
 import { getUserWallets } from '../models/user-wallet';
-import type { Wallet } from '../types';
+import type { Wallet, ApyWindow } from '../types';
 import { DEPEG_COOLDOWN_MINUTES, APY_DROP_COOLDOWN_MINUTES } from '../constants';
 
 /**
@@ -194,25 +195,35 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
     // Get all active positions for user's wallets
     const allPositions = await getActivePositionsByWallets(walletIds);
 
-    // Check each position's 4h APY
+    const apyWindow: ApyWindow = setting.apyWindow || '7d';
+
+    // Check each position's APY using configured window
     for (const position of allPositions) {
       if (!position.isActive) {
         continue;
       }
 
-      // Get 4h APY values
-      const apyValues = await get4hApyValues(position.id);
+      // Get APY based on user's configured window
+      let currentApy: number | null = null;
 
-      if (apyValues.length < 4) {
-        // Not enough data for 4h APY
-        continue;
+      if (apyWindow === '7d') {
+        const metrics = await getPositionMetrics(position.id, position);
+        if (!metrics) continue;
+        currentApy = metrics.apy7d;
+        // Fall back to 4h if 7d not available yet (insufficient data)
+        if (currentApy === null || currentApy === undefined) {
+          currentApy = metrics.apy;
+        }
+        if (currentApy === null || currentApy === undefined) continue;
+      } else {
+        // 4h window — use existing geometric chain method
+        const apyValues = await get4hApyValues(position.id);
+        if (apyValues.length < 4) continue;
+        currentApy = compute4hApy(apyValues);
       }
 
-      // Calculate 4h APY
-      const apy4h = compute4hApy(apyValues);
-
       // Check if below threshold
-      if (apy4h >= threshold) {
+      if (currentApy >= threshold) {
         continue; // APY is above threshold, no alert needed
       }
 
@@ -242,9 +253,10 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
         const sent = await sendApyDropNotification({
           topic: setting.ntfyTopic,
           positionName: position.displayName,
-          currentApy: apy4h,
+          currentApy,
           threshold,
           severity: setting.apySeverity,
+          apyWindow,
         });
 
         if (sent) {
@@ -263,15 +275,18 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
           environment: device.environment || 'production',
           positionName: position.displayName,
           positionId: position.id,
-          currentApy: apy4h,
+          currentApy,
           threshold,
           severity: setting.apySeverity,
+          apyWindow,
         });
 
         if (sent) {
           sentViaAnyChannel = true;
         }
       }
+
+      const windowLabel = apyWindow === '7d' ? '7d' : '4h';
 
       if (sentViaAnyChannel) {
         // Log the notification
@@ -280,17 +295,18 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
           notificationType: 'apy_drop',
           severity: setting.apySeverity,
           title: `Low APY Alert: ${position.displayName}`,
-          message: `4h APY dropped to ${(apy4h * 100).toFixed(2)}%, below your threshold of ${(threshold * 100).toFixed(2)}%`,
+          message: `${windowLabel} APY dropped to ${(currentApy * 100).toFixed(2)}%, below your threshold of ${(threshold * 100).toFixed(2)}%`,
           metadata: {
             positionId: position.id,
             positionName: position.displayName,
-            apy4h,
+            currentApy,
             threshold,
+            apyWindow,
           },
         });
 
         console.log(
-          `[notifications] Sent APY alert for ${position.displayName} to user ${setting.userId}`
+          `[notifications] Sent ${windowLabel} APY alert for ${position.displayName} to user ${setting.userId}`
         );
       }
     }

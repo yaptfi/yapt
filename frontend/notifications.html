@@ -129,6 +129,21 @@
 
             <div id="apySettings" class="settings-group" style="display: none;">
               <div class="form-group">
+                <label>APY Window</label>
+                <div style="display: flex; gap: 1rem;">
+                  <label class="checkbox-label">
+                    <input type="radio" name="apyWindow" value="7d" checked>
+                    <span>7-day APY (Recommended)</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="radio" name="apyWindow" value="4h">
+                    <span>4-hour APY</span>
+                  </label>
+                </div>
+                <p class="form-help">7-day APY is smoother and avoids false alarms from short-term fluctuations</p>
+              </div>
+
+              <div class="form-group">
                 <label for="apySeverity">Notification Priority</label>
                 <select id="apySeverity">
                   <option value="min">Min - No vibration/sound, under fold</option>
@@ -141,7 +156,7 @@
               </div>
 
               <div class="form-group">
-                <label for="apyThreshold">Alert when 4h APY drops below (%)</label>
+                <label for="apyThreshold" id="apyThresholdLabel">Alert when <span id="apyWindowLabel">7d</span> APY drops below (%)</label>
                 <input
                   type="number"
                   id="apyThreshold"
@@ -151,7 +166,7 @@
                   placeholder="1"
                   value="1"
                 >
-                <p class="form-help">Get notified when position's 4-hour APY falls below this percentage</p>
+                <p class="form-help">Get notified when position's APY falls below this percentage</p>
               </div>
             </div>
           </div>
