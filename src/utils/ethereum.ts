@@ -47,7 +47,7 @@ async function initializeProvider(): Promise<Provider> {
         return createManagedProvider(dbProviders);
       }
     }
-  } catch (error) {
+  } catch {
     // Database not ready or migration not run yet, fall through to env
     console.log('[Ethereum] Database not available, using environment configuration');
   }
