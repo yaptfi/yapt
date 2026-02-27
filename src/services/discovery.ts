@@ -3,19 +3,13 @@ import { createPosition } from '../models/position';
 import { Position, ProtocolKey } from '../types';
 import { createSnapshot, getLatestSnapshot } from '../models/snapshot';
 import { toChecksumAddress } from '../utils/ethereum';
+import { sleep } from '../utils/async';
 import { DISCOVERY_SLEEP_MS } from '../constants';
 
 export type DiscoveryProgressCallback = (event: {
   type: 'start' | 'protocol_start' | 'position_found' | 'protocol_complete' | 'complete' | 'error';
   data: any;
 }) => void;
-
-/**
- * Sleep utility for rate limiting
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 /**
  * Core discovery logic - discovers positions with optional progress callbacks

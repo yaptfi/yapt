@@ -53,6 +53,30 @@ async function streamDiscoveryProgress(
   }
 }
 
+/**
+ * Resolve and validate a raw address input (plain address or ENS name).
+ * Returns the resolved Ethereum address on success, or an error payload on failure.
+ */
+async function resolveAndValidateAddress(
+  raw: string
+): Promise<{ address: string } | { error: string; statusCode: number }> {
+  let address = raw;
+
+  if (isENSName(address)) {
+    const resolvedAddress = await resolveENS(address);
+    if (!resolvedAddress) {
+      return { error: 'ENS name could not be resolved', statusCode: 400 };
+    }
+    address = resolvedAddress;
+  }
+
+  if (!isValidAddress(address)) {
+    return { error: 'Invalid Ethereum address', statusCode: 400 };
+  }
+
+  return { address };
+}
+
 export default async function walletRoutes(server: FastifyInstance) {
   /**
    * POST /api/wallets
@@ -66,28 +90,20 @@ export default async function walletRoutes(server: FastifyInstance) {
         return reply.code(401).send({ error: 'Authentication required' });
       }
 
-      let { address } = request.body;
+      const { address: rawAddress } = request.body;
 
-      if (!address) {
+      if (!rawAddress) {
         return reply.code(400).send({ error: 'Address is required' });
       }
 
-      // Check if input is an ENS name and resolve it
-      if (isENSName(address)) {
-        const resolvedAddress = await resolveENS(address);
-        if (!resolvedAddress) {
-          return reply.code(400).send({ error: 'ENS name could not be resolved' });
-        }
-        address = resolvedAddress;
-      }
-
-      if (!isValidAddress(address)) {
-        return reply.code(400).send({ error: 'Invalid Ethereum address' });
+      const resolved = await resolveAndValidateAddress(rawAddress);
+      if ('error' in resolved) {
+        return reply.code(resolved.statusCode).send({ error: resolved.error });
       }
 
       try {
-        const checksumAddress = toChecksumAddress(address);
-        const ensName = isENSName(request.body.address) ? request.body.address : null;
+        const checksumAddress = toChecksumAddress(resolved.address);
+        const ensName = isENSName(rawAddress) ? rawAddress : null;
 
         // Check if wallet already exists in database
         const existingWallet = await getWalletByAddress(checksumAddress);
@@ -216,28 +232,20 @@ export default async function walletRoutes(server: FastifyInstance) {
         return reply.code(401).send({ error: 'Authentication required' });
       }
 
-      let { address } = request.body;
+      const { address: rawAddress } = request.body;
 
-      if (!address) {
+      if (!rawAddress) {
         return reply.code(400).send({ error: 'Address is required' });
       }
 
-      // Check if input is an ENS name and resolve it
-      if (isENSName(address)) {
-        const resolvedAddress = await resolveENS(address);
-        if (!resolvedAddress) {
-          return reply.code(400).send({ error: 'ENS name could not be resolved' });
-        }
-        address = resolvedAddress;
-      }
-
-      if (!isValidAddress(address)) {
-        return reply.code(400).send({ error: 'Invalid Ethereum address' });
+      const resolved = await resolveAndValidateAddress(rawAddress);
+      if ('error' in resolved) {
+        return reply.code(resolved.statusCode).send({ error: resolved.error });
       }
 
       try {
-        const checksumAddress = toChecksumAddress(address);
-        const ensName = isENSName(request.body.address) ? request.body.address : null;
+        const checksumAddress = toChecksumAddress(resolved.address);
+        const ensName = isENSName(rawAddress) ? rawAddress : null;
 
         // Check if wallet already exists in database
         const existingWallet = await getWalletByAddress(checksumAddress);

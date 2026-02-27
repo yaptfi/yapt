@@ -3,19 +3,13 @@ import { Position, ProtocolKey, PositionSnapshot } from '../types';
 import { getLatestSnapshot, createSnapshot, getTotalYieldSince, getSnapshotNearTime, getMostRecentResetSnapshot } from '../models/snapshot';
 import { computeApy } from '../utils/apy';
 import { archivePosition } from '../models/position';
+import { sleep } from '../utils/async';
 import {
   UPDATE_SLEEP_MS,
   APY_MIN_WINDOW_MINUTES,
   APY_MIN_BASE_USD,
   APY_MIN_BASE_RATIO,
 } from '../constants';
-
-/**
- * Sleep utility for rate limiting
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 // Flow detection removed: with hourly updates, yield deltas are small enough that
 // deposits/withdrawals are obvious from magnitude. No need for expensive event scanning.

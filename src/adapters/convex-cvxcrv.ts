@@ -1,7 +1,7 @@
 import { BaseProtocolAdapter } from './base';
 import { Position } from '../types';
 import { getContract, toChecksumAddress, formatUnits } from '../utils/ethereum';
-import { getAbi } from '../utils/config';
+import { getAbi, getStablePriceOverrides } from '../utils/config';
 
 const PROTOCOL_CONFIG = {
   stakingContract: '0xaa0C3f5F7DFD688C6E646F66CD2a6B66ACdbE434',
@@ -75,26 +75,18 @@ export class ConvexCvxCrvAdapter extends BaseProtocolAdapter {
     // Call earned() which returns an array of (token, amount) tuples
     const earnedData = await stakingContract.earned(walletAddress);
 
-    console.log(`Convex earned data for ${walletAddress}:`, JSON.stringify(earnedData, (_key, value) =>
-      typeof value === 'bigint' ? value.toString() : value
-    ));
+    const priceOverrides = getStablePriceOverrides();
+    const price = this.getStablePrice('crvUSD', priceOverrides);
 
     // Find crvUSD in the earned rewards
     for (const reward of earnedData) {
       const rewardToken = reward.token.toLowerCase();
-      console.log(`Checking reward token: ${rewardToken} against ${crvUsdToken}`);
 
       if (rewardToken === crvUsdToken) {
-        // Found crvUSD rewards!
         const earnedAmount = parseFloat(formatUnits(reward.amount, position.metadata.rewardDecimals));
-        console.log(`Found crvUSD rewards: ${earnedAmount} USD`);
-
-        // Assume crvUSD is $1.00
-        return earnedAmount * 1.0;
+        return earnedAmount * price;
       }
     }
-
-    console.log(`crvUSD not found in earned rewards for ${walletAddress}`);
     // crvUSD not found in earned rewards (might not be accrued yet)
     return 0;
   }

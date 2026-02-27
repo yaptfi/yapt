@@ -99,23 +99,10 @@ export function computeWindowedApy(apyValues: number[], periodsPerYear: number =
 }
 
 /**
- * Compute 7-day APY from snapshots
+ * Compute windowed APY (7d, 30d, or 4h) from snapshots.
+ * All windows use the same geometric-chaining formula with annual periods.
  */
 export function compute7dApy(apyValues: number[]): number {
-  return computeWindowedApy(apyValues, HOURS_PER_YEAR);
-}
-
-/**
- * Compute 30-day APY from snapshots
- */
-export function compute30dApy(apyValues: number[]): number {
-  return computeWindowedApy(apyValues, HOURS_PER_YEAR);
-}
-
-/**
- * Compute 4-hour APY from snapshots
- */
-export function compute4hApy(apyValues: number[]): number {
   return computeWindowedApy(apyValues, HOURS_PER_YEAR);
 }
 

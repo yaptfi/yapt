@@ -6,11 +6,30 @@ import { getEnvVar } from '../utils/config';
 import { discoverPositions } from '../services/discovery';
 import { cleanupUntrackedWallets } from '../services/cleanup';
 import { checkAndSendNotifications } from '../services/notificationChecker';
+import { Wallet } from '../types';
 
 const QUEUE_NAME = 'position-updates';
 
 let updateQueue: Queue | null = null;
 let updateWorker: Worker | null = null;
+
+/**
+ * Process wallets sequentially with per-wallet error isolation.
+ * A failure in one wallet is logged and skipped; remaining wallets continue.
+ */
+export async function processWalletsSequentially(wallets: Wallet[]): Promise<void> {
+  for (let i = 0; i < wallets.length; i++) {
+    try {
+      const positions = await getPositionsByWallet(wallets[i].id);
+      await updateWallet(wallets[i].id, positions);
+    } catch (err) {
+      console.error(`[scheduler] Failed to update wallet ${wallets[i].id}:`, err);
+    }
+    if (i < wallets.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
 
 /**
  * Initialize the job queue and worker
@@ -39,17 +58,7 @@ export async function initializeScheduler(): Promise<void> {
         const wallets = await getAllWallets();
         console.log(`Updating ${wallets.length} wallets sequentially (1 wallet/second)...`);
 
-        // Process wallets sequentially with 1-second delay between each
-        for (let i = 0; i < wallets.length; i++) {
-          const wallet = wallets[i];
-          const positions = await getPositionsByWallet(wallet.id);
-          await updateWallet(wallet.id, positions);
-
-          // Add 1-second delay between wallets (skip after last wallet)
-          if (i < wallets.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-        }
+        await processWalletsSequentially(wallets);
 
         // After all wallets are updated, check notification conditions
         console.log('All wallets updated, checking notifications...');

@@ -1,10 +1,7 @@
 import { Contract } from 'ethers';
 import { TransferEvent, NetFlowResult } from '../types';
 import { formatUnits, rpcThrottle } from './ethereum';
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { sleep } from './async';
 
 async function queryWithBackoff(
   contract: Contract,

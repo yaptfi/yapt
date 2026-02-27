@@ -1,6 +1,7 @@
 import {
   computeApy,
   computeWindowedApy,
+  compute7dApy,
   estimateDailyIncome,
   estimateMonthlyIncome,
   estimateYearlyIncome,
@@ -65,6 +66,18 @@ describe('APY Calculations', () => {
 
       expect(result.yieldDelta).toBe(100);
       expect(result.apy).toBe(0); // Edge case: no base to calculate from
+    });
+  });
+
+  describe('windowed APY aliases', () => {
+    const values = [0.04, 0.05, 0.03];
+
+    it('compute7dApy produces same result as computeWindowedApy', () => {
+      expect(compute7dApy(values)).toBe(computeWindowedApy(values));
+    });
+
+    it('compute7dApy handles empty array', () => {
+      expect(compute7dApy([])).toBe(0);
     });
   });
 

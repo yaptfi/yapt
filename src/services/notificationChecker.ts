@@ -6,7 +6,7 @@ import { getActiveDevices } from '../models/device';
 import { fetchStablecoinPrices, isDepegged } from './stablecoinPriceMonitor';
 import { getActivePositionsByWallets } from '../models/position';
 import { get4hApyValues } from '../models/snapshot';
-import { compute4hApy } from '../utils/apy';
+import { compute7dApy } from '../utils/apy';
 import { getPositionMetrics } from './update';
 import { getUserWallets } from '../models/user-wallet';
 import type { Wallet, ApyWindow } from '../types';
@@ -234,7 +234,7 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
         // 4h window — use existing geometric chain method
         const apyValues = await get4hApyValues(position.id);
         if (apyValues.length < 4) continue;
-        currentApy = compute4hApy(apyValues);
+        currentApy = compute7dApy(apyValues);
       }
 
       // Check if below threshold

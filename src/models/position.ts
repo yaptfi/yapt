@@ -1,6 +1,22 @@
 import { query, queryOne, withTransaction, queryOnClient, queryOneOnClient } from '../utils/db';
 import { Position, CountingMode } from '../types';
 
+const POSITION_SELECT = `
+  p.id,
+  p.wallet_id as "walletId",
+  p.protocol_id as "protocolId",
+  p.protocol_position_key as "protocolPositionKey",
+  p.display_name as "displayName",
+  p.base_asset as "baseAsset",
+  p.stablecoin_id as "stablecoinId",
+  p.counting_mode as "countingMode",
+  p.measure_method as "measureMethod",
+  p.metadata,
+  p.is_active as "isActive",
+  p.created_at as "createdAt",
+  pr.key as protocol_key,
+  pr.name as protocol_name`;
+
 export async function createPosition(
   walletId: string,
   protocolKey: string,
@@ -77,21 +93,7 @@ export async function createPosition(
 
 export async function getPositionsByWallet(walletId: string): Promise<Position[]> {
   return query<Position>(
-    `SELECT
-      p.id,
-      p.wallet_id as "walletId",
-      p.protocol_id as "protocolId",
-      p.protocol_position_key as "protocolPositionKey",
-      p.display_name as "displayName",
-      p.base_asset as "baseAsset",
-      p.stablecoin_id as "stablecoinId",
-      p.counting_mode as "countingMode",
-      p.measure_method as "measureMethod",
-      p.metadata,
-      p.is_active as "isActive",
-      p.created_at as "createdAt",
-      pr.key as protocol_key,
-      pr.name as protocol_name
+    `SELECT ${POSITION_SELECT}
      FROM position p
      JOIN protocol pr ON p.protocol_id = pr.id
      WHERE p.wallet_id = $1 AND p.is_active = true
@@ -102,21 +104,7 @@ export async function getPositionsByWallet(walletId: string): Promise<Position[]
 
 export async function getPositionById(id: string): Promise<Position | null> {
   return queryOne<Position>(
-    `SELECT
-      p.id,
-      p.wallet_id as "walletId",
-      p.protocol_id as "protocolId",
-      p.protocol_position_key as "protocolPositionKey",
-      p.display_name as "displayName",
-      p.base_asset as "baseAsset",
-      p.stablecoin_id as "stablecoinId",
-      p.counting_mode as "countingMode",
-      p.measure_method as "measureMethod",
-      p.metadata,
-      p.is_active as "isActive",
-      p.created_at as "createdAt",
-      pr.key as protocol_key,
-      pr.name as protocol_name
+    `SELECT ${POSITION_SELECT}
      FROM position p
      JOIN protocol pr ON p.protocol_id = pr.id
      WHERE p.id = $1`,
@@ -176,21 +164,7 @@ export async function updatePositionActiveStatus(
 
 export async function getAllActivePositions(): Promise<Position[]> {
   return query<Position>(
-    `SELECT
-      p.id,
-      p.wallet_id as "walletId",
-      p.protocol_id as "protocolId",
-      p.protocol_position_key as "protocolPositionKey",
-      p.display_name as "displayName",
-      p.base_asset as "baseAsset",
-      p.stablecoin_id as "stablecoinId",
-      p.counting_mode as "countingMode",
-      p.measure_method as "measureMethod",
-      p.metadata,
-      p.is_active as "isActive",
-      p.created_at as "createdAt",
-      pr.key as protocol_key,
-      pr.name as protocol_name
+    `SELECT ${POSITION_SELECT}
      FROM position p
      JOIN protocol pr ON p.protocol_id = pr.id
      WHERE p.is_active = true
@@ -204,21 +178,7 @@ export async function getActivePositionsByWallets(walletIds: string[]): Promise<
   }
 
   return query<Position>(
-    `SELECT
-      p.id,
-      p.wallet_id as "walletId",
-      p.protocol_id as "protocolId",
-      p.protocol_position_key as "protocolPositionKey",
-      p.display_name as "displayName",
-      p.base_asset as "baseAsset",
-      p.stablecoin_id as "stablecoinId",
-      p.counting_mode as "countingMode",
-      p.measure_method as "measureMethod",
-      p.metadata,
-      p.is_active as "isActive",
-      p.created_at as "createdAt",
-      pr.key as protocol_key,
-      pr.name as protocol_name
+    `SELECT ${POSITION_SELECT}
      FROM position p
      JOIN protocol pr ON p.protocol_id = pr.id
      WHERE p.is_active = true AND p.wallet_id = ANY($1::uuid[])
