@@ -10,32 +10,32 @@ const mockGetPositionsByWallet = jest.fn();
 const mockUpdateWallet = jest.fn();
 const mockCheckAndSendNotifications = jest.fn();
 
-jest.mock('../models/wallet', () => ({
+jest.mock('../../src/models/wallet', () => ({
   getAllWallets: jest.fn(),
   getWalletById: jest.fn(),
 }));
 
-jest.mock('../models/position', () => ({
+jest.mock('../../src/models/position', () => ({
   getPositionsByWallet: mockGetPositionsByWallet,
 }));
 
-jest.mock('../services/update', () => ({
+jest.mock('../../src/services/update', () => ({
   updateWallet: mockUpdateWallet,
 }));
 
-jest.mock('../services/discovery', () => ({
+jest.mock('../../src/services/discovery', () => ({
   discoverPositions: jest.fn(),
 }));
 
-jest.mock('../services/cleanup', () => ({
+jest.mock('../../src/services/cleanup', () => ({
   cleanupUntrackedWallets: jest.fn(),
 }));
 
-jest.mock('../services/notificationChecker', () => ({
+jest.mock('../../src/services/notificationChecker', () => ({
   checkAndSendNotifications: mockCheckAndSendNotifications,
 }));
 
-jest.mock('../utils/config', () => ({
+jest.mock('../../src/utils/config', () => ({
   getEnvVar: jest.fn().mockReturnValue('redis://localhost:6379'),
 }));
 
@@ -51,9 +51,8 @@ jest.mock('bullmq', () => ({
   })),
 }));
 
-// Use require() so TypeScript does not complain when the export does not exist yet.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const schedulerModule = require('./scheduler') as Record<string, unknown>;
+const schedulerModule = require('../../src/jobs/scheduler') as Record<string, unknown>;
 
 const WALLETS = [
   { id: 'wallet-1', address: '0x1' },

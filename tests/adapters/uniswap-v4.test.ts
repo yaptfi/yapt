@@ -1,15 +1,15 @@
-import { UniswapV4Adapter } from './uniswap-v4';
-import { getContract, formatUnits } from '../utils/ethereum';
-import { getAbi } from '../utils/config';
-import { Position } from '../types';
+import { UniswapV4Adapter } from '../../src/adapters/uniswap-v4';
+import { getContract, formatUnits } from '../../src/utils/ethereum';
+import { getAbi } from '../../src/utils/config';
+import { Position } from '../../src/types';
 
-jest.mock('../utils/ethereum', () => ({
+jest.mock('../../src/utils/ethereum', () => ({
   getContract: jest.fn(),
   toChecksumAddress: jest.fn((address: string) => address),
   formatUnits: jest.fn(),
 }));
 
-jest.mock('../utils/config', () => ({
+jest.mock('../../src/utils/config', () => ({
   getAbi: jest.fn(),
   getProtocolConfig: jest.fn(() => ({})),
 }));

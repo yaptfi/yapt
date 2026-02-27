@@ -6,7 +6,7 @@ import {
   estimateMonthlyIncome,
   estimateYearlyIncome,
   computeAllTimeApy,
-} from './apy';
+} from '../../src/utils/apy';
 
 describe('APY Calculations', () => {
   describe('computeApy', () => {

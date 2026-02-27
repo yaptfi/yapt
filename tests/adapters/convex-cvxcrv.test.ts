@@ -1,23 +1,23 @@
-import { ConvexCvxCrvAdapter } from './convex-cvxcrv';
-import { Position } from '../types';
+import { ConvexCvxCrvAdapter } from '../../src/adapters/convex-cvxcrv';
+import { Position } from '../../src/types';
 
 const CRV_USD_ADDRESS = '0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E';
 const STAKING_CONTRACT = '0xaa0C3f5F7DFD688C6E646F66CD2a6B66ACdbE434';
 
 // Mock entire modules — factory must not reference outer-scope variables.
-jest.mock('../utils/config', () => ({
+jest.mock('../../src/utils/config', () => ({
   getAbi: jest.fn().mockReturnValue([]),
   getStablePriceOverrides: jest.fn(),
 }));
 
-jest.mock('../utils/ethereum', () => ({
+jest.mock('../../src/utils/ethereum', () => ({
   getContract: jest.fn(),
   toChecksumAddress: (a: string) => a,
   formatUnits: (_amount: bigint, _decimals: number) => '1.0',
 }));
 
-import { getStablePriceOverrides } from '../utils/config';
-import { getContract } from '../utils/ethereum';
+import { getStablePriceOverrides } from '../../src/utils/config';
+import { getContract } from '../../src/utils/ethereum';
 
 const POSITION: Position = {
   id: 'pos-1',

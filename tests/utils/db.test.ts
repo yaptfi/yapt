@@ -10,7 +10,7 @@ jest.mock('pg', () => ({
   })),
 }));
 
-import { withTransaction, closePool } from './db';
+import { withTransaction, closePool } from '../../src/utils/db';
 
 describe('withTransaction', () => {
   beforeEach(() => {

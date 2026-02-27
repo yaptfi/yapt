@@ -2,7 +2,7 @@ import {
   INFINIFI_RATE_SCALE_DEFAULT,
   parseRateScale,
   applyScaledExchangeRate,
-} from './infinifi-liusd-4w';
+} from '../../src/adapters/infinifi-liusd-4w';
 
 describe('Infinifi liUSD-4w helpers', () => {
   describe('parseRateScale', () => {

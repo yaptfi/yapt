@@ -1,8 +1,8 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import notificationRoutes from './notifications';
-import { getUserById } from '../models/user';
-import { getNotificationSettings } from '../models/notificationSettings';
-import { getNotificationLogsWithCount } from '../models/notificationLog';
+import notificationRoutes from '../../src/routes/notifications';
+import { getUserById } from '../../src/models/user';
+import { getNotificationSettings } from '../../src/models/notificationSettings';
+import { getNotificationLogsWithCount } from '../../src/models/notificationLog';
 
 interface SettingsContractResponse {
   settings: {
@@ -22,21 +22,21 @@ interface HistoryContractResponse {
   }>;
 }
 
-jest.mock('../models/user', () => ({
+jest.mock('../../src/models/user', () => ({
   getUserById: jest.fn(),
 }));
 
-jest.mock('../models/notificationSettings', () => ({
+jest.mock('../../src/models/notificationSettings', () => ({
   getNotificationSettings: jest.fn(),
   upsertNotificationSettings: jest.fn(),
   deleteNotificationSettings: jest.fn(),
 }));
 
-jest.mock('../models/notificationLog', () => ({
+jest.mock('../../src/models/notificationLog', () => ({
   getNotificationLogsWithCount: jest.fn(),
 }));
 
-jest.mock('../models/device', () => ({
+jest.mock('../../src/models/device', () => ({
   createDevice: jest.fn(),
   deleteDevice: jest.fn(),
 }));
