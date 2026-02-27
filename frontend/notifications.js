@@ -58,7 +58,8 @@ async function loadSettings() {
       throw new Error('Failed to load settings');
     }
 
-    const settings = await response.json();
+    const payload = await response.json();
+    const settings = payload.settings || payload;
 
     // Load supported stablecoins for dynamic selector
     let stablecoins = [];
@@ -207,7 +208,8 @@ async function saveSettings(event) {
       throw new Error(error.error || 'Failed to save settings');
     }
 
-    const data = await response.json();
+    const payload = await response.json();
+    const data = payload.settings || payload;
 
     // If the server returned a topic, show it and detect if this is the first time
     const topicDisplayEl = document.getElementById('topicDisplay');
@@ -286,13 +288,13 @@ async function loadHistory() {
       <tbody>
         ${data.notifications.map(notif => `
           <tr>
-            <td><span class="badge badge-${notif.notificationType}">${formatType(notif.notificationType)}</span></td>
+            <td><span class="badge badge-${notif.type || notif.notificationType}">${formatType(notif.type || notif.notificationType)}</span></td>
             <td><span class="severity severity-${notif.severity}">${notif.severity}</span></td>
             <td>
               <strong>${escapeHtml(notif.title)}</strong><br>
               <span style="color: var(--text-secondary); font-size: 0.9em;">${escapeHtml(notif.message)}</span>
             </td>
-            <td style="white-space: nowrap;">${formatTime(notif.sentAt)}</td>
+            <td style="white-space: nowrap;">${formatTime(notif.createdAt || notif.sentAt)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -310,6 +312,7 @@ async function loadHistory() {
 function formatType(type) {
   const types = {
     'depeg': 'Depeg',
+    'apy': 'APY Drop',
     'apy_drop': 'APY Drop',
   };
   return types[type] || type;

@@ -9,6 +9,27 @@ import { getNotificationLogsWithCount } from '../models/notificationLog';
 import { createDevice, deleteDevice } from '../models/device';
 import { NotificationSeverity, NotificationType, DeviceType, ApyWindow } from '../types';
 
+interface NotificationSettingsResponse {
+  depegEnabled: boolean;
+  depegSeverity: NotificationSeverity;
+  depegLowerThreshold: number;
+  depegUpperThreshold: number | null;
+  depegSymbols: string[] | null;
+  apyEnabled: boolean;
+  apySeverity: NotificationSeverity;
+  apyThreshold: number;
+  apyWindow: ApyWindow;
+  ntfyTopic: string | null;
+}
+
+function buildSettingsResponse(settings: NotificationSettingsResponse) {
+  // Keep both wrapped and flat response shape for compatibility.
+  return {
+    settings,
+    ...settings,
+  };
+}
+
 export default async function notificationRoutes(server: FastifyInstance) {
   // Add request logging hook for all /devices routes (visible in production)
   server.addHook('onRequest', async (request) => {
@@ -56,36 +77,32 @@ export default async function notificationRoutes(server: FastifyInstance) {
 
         if (!settings) {
           // Return default settings if none exist
-          return reply.send({
-            settings: {
-              depegEnabled: false,
-              depegSeverity: 'default',
-              depegLowerThreshold: 0.99,
-              depegUpperThreshold: null,
-              depegSymbols: null, // null => all supported stablecoins
-              apyEnabled: false,
-              apySeverity: 'default',
-              apyThreshold: 0.01,
-              apyWindow: '7d',
-              ntfyTopic: null,
-            },
-          });
+          return reply.send(buildSettingsResponse({
+            depegEnabled: false,
+            depegSeverity: 'default',
+            depegLowerThreshold: 0.99,
+            depegUpperThreshold: null,
+            depegSymbols: null, // null => all supported stablecoins
+            apyEnabled: false,
+            apySeverity: 'default',
+            apyThreshold: 0.01,
+            apyWindow: '7d',
+            ntfyTopic: null,
+          }));
         }
 
-        return reply.send({
-          settings: {
-            depegEnabled: settings.depegEnabled,
-            depegSeverity: settings.depegSeverity,
-            depegLowerThreshold: parseFloat(settings.depegLowerThreshold),
-            depegUpperThreshold: settings.depegUpperThreshold ? parseFloat(settings.depegUpperThreshold) : null,
-            depegSymbols: settings.depegSymbols,
-            apyEnabled: settings.apyEnabled,
-            apySeverity: settings.apySeverity,
-            apyThreshold: parseFloat(settings.apyThreshold),
-            apyWindow: settings.apyWindow,
-            ntfyTopic: settings.ntfyTopic,
-          },
-        });
+        return reply.send(buildSettingsResponse({
+          depegEnabled: settings.depegEnabled,
+          depegSeverity: settings.depegSeverity,
+          depegLowerThreshold: parseFloat(settings.depegLowerThreshold),
+          depegUpperThreshold: settings.depegUpperThreshold ? parseFloat(settings.depegUpperThreshold) : null,
+          depegSymbols: settings.depegSymbols,
+          apyEnabled: settings.apyEnabled,
+          apySeverity: settings.apySeverity,
+          apyThreshold: parseFloat(settings.apyThreshold),
+          apyWindow: settings.apyWindow,
+          ntfyTopic: settings.ntfyTopic,
+        }));
       } catch (error) {
         server.log.error(error);
         return reply.code(500).send({ error: 'Failed to fetch notification settings' });
@@ -211,20 +228,18 @@ export default async function notificationRoutes(server: FastifyInstance) {
           apyWindow,
         });
 
-        return reply.send({
-          settings: {
-            depegEnabled: settings.depegEnabled,
-            depegSeverity: settings.depegSeverity,
-            depegLowerThreshold: parseFloat(settings.depegLowerThreshold),
-            depegUpperThreshold: settings.depegUpperThreshold ? parseFloat(settings.depegUpperThreshold) : null,
-            depegSymbols: settings.depegSymbols,
-            apyEnabled: settings.apyEnabled,
-            apySeverity: settings.apySeverity,
-            apyThreshold: parseFloat(settings.apyThreshold),
-            apyWindow: settings.apyWindow,
-            ntfyTopic: settings.ntfyTopic,
-          },
-        });
+        return reply.send(buildSettingsResponse({
+          depegEnabled: settings.depegEnabled,
+          depegSeverity: settings.depegSeverity,
+          depegLowerThreshold: parseFloat(settings.depegLowerThreshold),
+          depegUpperThreshold: settings.depegUpperThreshold ? parseFloat(settings.depegUpperThreshold) : null,
+          depegSymbols: settings.depegSymbols,
+          apyEnabled: settings.apyEnabled,
+          apySeverity: settings.apySeverity,
+          apyThreshold: parseFloat(settings.apyThreshold),
+          apyWindow: settings.apyWindow,
+          ntfyTopic: settings.ntfyTopic,
+        }));
       } catch (error) {
         server.log.error(error);
         return reply.code(500).send({ error: 'Failed to update notification settings' });
@@ -309,6 +324,7 @@ export default async function notificationRoutes(server: FastifyInstance) {
 
         // Map field names for iOS compatibility
         const mappedNotifications = notifications.map((log) => ({
+          // Current response contract
           id: log.id,
           type: log.notificationType === 'apy_drop' ? 'apy' : log.notificationType,
           severity: log.severity,
@@ -325,6 +341,9 @@ export default async function notificationRoutes(server: FastifyInstance) {
             change: log.metadata?.change ?? null,
           },
           createdAt: log.sentAt,
+          // Legacy compatibility fields
+          notificationType: log.notificationType,
+          sentAt: log.sentAt,
         }));
 
         return reply.send({
