@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { query, queryOne } from '../utils/db';
+import { query, queryOne, withTransaction, queryOnClient } from '../utils/db';
 import { requireAdmin } from '../middleware/auth';
 import {
   getAllRPCProviders,
@@ -85,49 +85,38 @@ export default async function adminRoutes(server: FastifyInstance) {
           GROUP BY w.id
         `, [id]);
 
-        // Hard delete (cascades will handle related records)
+        // Hard delete in one DB transaction.
         // Order: snapshots -> positions -> user_wallet links -> wallet
-        await query('BEGIN');
+        await withTransaction(async (client) => {
+          await queryOnClient(
+            client,
+            `DELETE FROM position_snapshot
+             WHERE position_id IN (
+               SELECT id FROM position WHERE wallet_id = $1
+             )`,
+            [id]
+          );
 
-        try {
-          // Delete snapshots first
-          await query(`
-            DELETE FROM position_snapshot
-            WHERE position_id IN (
-              SELECT id FROM position WHERE wallet_id = $1
-            )
-          `, [id]);
+          await queryOnClient(client, 'DELETE FROM position WHERE wallet_id = $1', [id]);
+          await queryOnClient(client, 'DELETE FROM user_wallet WHERE wallet_id = $1', [id]);
+          await queryOnClient(client, 'DELETE FROM wallet WHERE id = $1', [id]);
+        });
 
-          // Delete positions
-          await query('DELETE FROM position WHERE wallet_id = $1', [id]);
+        server.log.info({
+          walletId: id,
+          address: wallet.address,
+          deleted: stats || { positions: 0, snapshots: 0, users: 0 }
+        }, 'Wallet hard deleted');
 
-          // Delete user_wallet links
-          await query('DELETE FROM user_wallet WHERE wallet_id = $1', [id]);
-
-          // Delete wallet
-          await query('DELETE FROM wallet WHERE id = $1', [id]);
-
-          await query('COMMIT');
-
-          server.log.info({
-            walletId: id,
-            address: wallet.address,
-            deleted: stats || { positions: 0, snapshots: 0, users: 0 }
-          }, 'Wallet hard deleted');
-
-          return reply.send({
-            message: 'Wallet and all associated data deleted',
-            deleted: {
-              wallet: wallet.address,
-              positions: stats?.positions || 0,
-              snapshots: stats?.snapshots || 0,
-              users: stats?.users || 0,
-            }
-          });
-        } catch (error) {
-          await query('ROLLBACK');
-          throw error;
-        }
+        return reply.send({
+          message: 'Wallet and all associated data deleted',
+          deleted: {
+            wallet: wallet.address,
+            positions: stats?.positions || 0,
+            snapshots: stats?.snapshots || 0,
+            users: stats?.users || 0,
+          }
+        });
       } catch (error) {
         server.log.error(error);
         return reply.code(500).send({ error: 'Failed to delete wallet' });

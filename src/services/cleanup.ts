@@ -1,4 +1,4 @@
-import { query, queryOne } from '../utils/db';
+import { query, queryOne, withTransaction, queryOnClient } from '../utils/db';
 
 /**
  * Remove wallets that have no users watching them, along with their positions and snapshots.
@@ -39,23 +39,23 @@ export async function cleanupUntrackedWallets(): Promise<{
       [w.id]
     );
 
-    await query('BEGIN');
     try {
-      await query(
-        `DELETE FROM position_snapshot
-         WHERE position_id IN (SELECT id FROM position WHERE wallet_id = $1)`,
-        [w.id]
-      );
-      await query('DELETE FROM position WHERE wallet_id = $1', [w.id]);
-      await query('DELETE FROM user_wallet WHERE wallet_id = $1', [w.id]);
-      await query('DELETE FROM wallet WHERE id = $1', [w.id]);
-      await query('COMMIT');
+      await withTransaction(async (client) => {
+        await queryOnClient(
+          client,
+          `DELETE FROM position_snapshot
+           WHERE position_id IN (SELECT id FROM position WHERE wallet_id = $1)`,
+          [w.id]
+        );
+        await queryOnClient(client, 'DELETE FROM position WHERE wallet_id = $1', [w.id]);
+        await queryOnClient(client, 'DELETE FROM user_wallet WHERE wallet_id = $1', [w.id]);
+        await queryOnClient(client, 'DELETE FROM wallet WHERE id = $1', [w.id]);
+      });
 
       totalDeletedSnapshots += stats ? parseInt(stats.snapshots, 10) : 0;
       totalDeletedPositions += stats ? parseInt(stats.positions, 10) : 0;
       totalDeletedWallets += 1;
     } catch (err) {
-      await query('ROLLBACK');
       // Soft-fail on one wallet, continue
       // eslint-disable-next-line no-console
       console.error(`[cleanup] Failed to remove wallet ${w.id}:`, err);
@@ -74,4 +74,3 @@ export async function cleanupUntrackedWallets(): Promise<{
     deletedSnapshots: totalDeletedSnapshots,
   };
 }
-

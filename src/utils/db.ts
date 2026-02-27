@@ -1,6 +1,7 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 let pool: Pool | null = null;
+export type DBClient = PoolClient;
 
 export function getPool(): Pool {
   if (!pool) {
@@ -32,17 +33,55 @@ export async function closePool(): Promise<void> {
   }
 }
 
-export async function query<T = any>(text: string, params?: any[]): Promise<T[]> {
+export async function withClient<T>(fn: (client: DBClient) => Promise<T>): Promise<T> {
   const client = await getPool().connect();
   try {
-    const result = await client.query(text, params);
-    return result.rows;
+    return await fn(client);
   } finally {
     client.release();
   }
 }
 
-export async function queryOne<T = any>(text: string, params?: any[]): Promise<T | null> {
-  const rows = await query<T>(text, params);
+export async function queryOnClient<T = any>(
+  client: DBClient,
+  text: string,
+  params?: any[]
+): Promise<T[]> {
+  const result = await client.query(text, params);
+  return result.rows;
+}
+
+export async function queryOneOnClient<T = any>(
+  client: DBClient,
+  text: string,
+  params?: any[]
+): Promise<T | null> {
+  const rows = await queryOnClient<T>(client, text, params);
   return rows.length > 0 ? rows[0] : null;
+}
+
+export async function withTransaction<T>(fn: (client: DBClient) => Promise<T>): Promise<T> {
+  return withClient(async (client) => {
+    await client.query('BEGIN');
+    try {
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('Failed to rollback transaction', rollbackError);
+      }
+      throw error;
+    }
+  });
+}
+
+export async function query<T = any>(text: string, params?: any[]): Promise<T[]> {
+  return withClient((client) => queryOnClient<T>(client, text, params));
+}
+
+export async function queryOne<T = any>(text: string, params?: any[]): Promise<T | null> {
+  return withClient((client) => queryOneOnClient<T>(client, text, params));
 }

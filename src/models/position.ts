@@ -1,4 +1,4 @@
-import { query, queryOne } from '../utils/db';
+import { query, queryOne, withTransaction, queryOnClient, queryOneOnClient } from '../utils/db';
 import { Position, CountingMode } from '../types';
 
 export async function createPosition(
@@ -235,30 +235,53 @@ export async function getActivePositionsByWallets(walletIds: string[]): Promise<
  * @param exitReason - Reason for archiving (e.g., 'complete_exit', 'user_archived')
  */
 export async function archivePosition(positionId: string, exitReason: string): Promise<void> {
-  // Step 1: Copy position to archive table
-  await query(
-    `INSERT INTO position_archive
-      (id, wallet_id, protocol_id, protocol_position_key, display_name,
-       base_asset, counting_mode, measure_method, metadata, is_active,
-       created_at, exit_reason)
-    SELECT id, wallet_id, protocol_id, protocol_position_key, display_name,
-           base_asset, counting_mode, measure_method, metadata, is_active,
-           created_at, $2
-    FROM position WHERE id = $1`,
-    [positionId, exitReason]
-  );
+  await withTransaction(async (client) => {
+    const positionExists = await queryOneOnClient<{ id: string }>(
+      client,
+      'SELECT id FROM position WHERE id = $1',
+      [positionId]
+    );
 
-  // Step 2: Copy all snapshots to archive table
-  await query(
-    `INSERT INTO position_snapshot_archive
-      (position_id, ts, value_usd, net_flows_usd, yield_delta_usd, apy)
-    SELECT position_id, ts, value_usd, net_flows_usd, yield_delta_usd, apy
-    FROM position_snapshot WHERE position_id = $1`,
-    [positionId]
-  );
+    // Idempotent behavior: already archived/no-op.
+    if (!positionExists) {
+      return;
+    }
 
-  // Step 3: Delete from main tables (CASCADE will delete snapshots)
-  await query('DELETE FROM position WHERE id = $1', [positionId]);
+    // Step 1: Copy position to archive table
+    await queryOnClient(
+      client,
+      `INSERT INTO position_archive
+        (id, wallet_id, protocol_id, protocol_position_key, display_name,
+         base_asset, counting_mode, measure_method, metadata, is_active,
+         created_at, exit_reason)
+      SELECT id, wallet_id, protocol_id, protocol_position_key, display_name,
+             base_asset, counting_mode, measure_method, metadata, is_active,
+             created_at, $2
+      FROM position WHERE id = $1
+      ON CONFLICT (id) DO NOTHING`,
+      [positionId, exitReason]
+    );
+
+    // Step 2: Copy all snapshots to archive table (avoid duplicate archival rows)
+    await queryOnClient(
+      client,
+      `INSERT INTO position_snapshot_archive
+        (position_id, ts, value_usd, net_flows_usd, yield_delta_usd, apy)
+      SELECT ps.position_id, ps.ts, ps.value_usd, ps.net_flows_usd, ps.yield_delta_usd, ps.apy
+      FROM position_snapshot ps
+      WHERE ps.position_id = $1
+        AND NOT EXISTS (
+          SELECT 1
+          FROM position_snapshot_archive psa
+          WHERE psa.position_id = ps.position_id
+            AND psa.ts = ps.ts
+        )`,
+      [positionId]
+    );
+
+    // Step 3: Delete from main tables (CASCADE will delete snapshots)
+    await queryOnClient(client, 'DELETE FROM position WHERE id = $1', [positionId]);
+  });
 
   console.log(`Archived position ${positionId} (reason: ${exitReason})`);
 }
