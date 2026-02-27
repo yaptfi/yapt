@@ -93,10 +93,28 @@ async function start() {
       closeClient: true,
     });
 
-    // Session store configuration
-    // Note: Redis session storage has compatibility issues between connect-redis/ioredis
-    // Using memory store for now (sessions are per-instance but work reliably)
-    const useRedisStore = false; // getEnvVar('SESSION_STORE', 'memory') === 'redis';
+    // Session store configuration (env-driven).
+    // In production, default to Redis for cross-instance persistence.
+    const requestedSessionStore = getEnvVar(
+      'SESSION_STORE',
+      process.env.NODE_ENV === 'production' ? 'redis' : 'memory'
+    ).toLowerCase();
+    const sessionStore =
+      requestedSessionStore === 'redis' || requestedSessionStore === 'memory'
+        ? requestedSessionStore
+        : 'memory';
+    if (sessionStore !== requestedSessionStore) {
+      server.log.warn(
+        { sessionStore: requestedSessionStore },
+        'Invalid SESSION_STORE value, falling back to memory'
+      );
+    }
+    const useRedisStore = sessionStore === 'redis';
+    if (!useRedisStore && process.env.NODE_ENV === 'production') {
+      server.log.warn(
+        'Using in-memory session store in production. Set SESSION_STORE=redis for persistent sessions.'
+      );
+    }
     const sessionOptions: any = {
       secret: SESSION_SECRET,
       // Use a distinct cookie name to avoid stale client cookies when switching stores
@@ -136,10 +154,17 @@ async function start() {
               cleanup();
               resolve(false);
             };
+            const removeListener = (event: 'ready' | 'error' | 'end', handler: () => void) => {
+              if (typeof redisClient.off === 'function') {
+                redisClient.off(event, handler);
+              } else if (typeof redisClient.removeListener === 'function') {
+                redisClient.removeListener(event, handler);
+              }
+            };
             const cleanup = () => {
-              try { redisClient.off('ready', onReady); } catch {}
-              try { redisClient.off('error', onError); } catch {}
-              try { redisClient.off('end', onEnd); } catch {}
+              removeListener('ready', onReady);
+              removeListener('error', onError);
+              removeListener('end', onEnd);
             };
             redisClient.once('ready', onReady);
             redisClient.once('error', onError);
