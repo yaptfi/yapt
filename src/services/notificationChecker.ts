@@ -70,6 +70,19 @@ async function checkDepegNotifications(settings: any[]): Promise<void> {
     const upperThreshold = setting.depegUpperThreshold
       ? parseFloat(setting.depegUpperThreshold)
       : null;
+    const recentNotifications = await getRecentNotifications(
+      setting.userId,
+      'depeg',
+      DEPEG_COOLDOWN_MINUTES
+    );
+    const recentlyNotifiedSymbols = new Set(
+      recentNotifications
+        .map((n) => n.metadata?.stablecoin)
+        .filter((stablecoin): stablecoin is string => Boolean(stablecoin))
+        .map((stablecoin) => stablecoin.toUpperCase())
+    );
+    const devices = await getActiveDevices(setting.userId);
+    const iosDevices = devices.filter((d) => d.deviceType === 'ios');
 
     // Check each stablecoin price
     for (const [symbol, price] of Object.entries(prices)) {
@@ -86,17 +99,9 @@ async function checkDepegNotifications(settings: any[]): Promise<void> {
         continue;
       }
 
-      // Check spam prevention
-      const recentNotifications = await getRecentNotifications(
-        setting.userId,
-        'depeg',
-        DEPEG_COOLDOWN_MINUTES
-      );
-
-      // Check if we already sent a notification for this stablecoin recently
-      const alreadySent = recentNotifications.some(
-        (n) => n.metadata?.stablecoin === symbol
-      );
+      // Check if we already sent a notification for this stablecoin recently.
+      // Include notifications sent earlier in this same run.
+      const alreadySent = recentlyNotifiedSymbols.has(symbol.toUpperCase());
 
       if (alreadySent) {
         console.log(
@@ -125,9 +130,6 @@ async function checkDepegNotifications(settings: any[]): Promise<void> {
       }
 
       // Send to iOS devices (APNs)
-      const devices = await getActiveDevices(setting.userId);
-      const iosDevices = devices.filter((d) => d.deviceType === 'ios');
-
       for (const device of iosDevices) {
         const sent = await sendApnsDepegNotification({
           deviceToken: device.pushToken,
@@ -162,6 +164,7 @@ async function checkDepegNotifications(settings: any[]): Promise<void> {
             isUpper: depegCheck.isUpper,
           },
         });
+        recentlyNotifiedSymbols.add(symbol.toUpperCase());
 
         console.log(
           `[notifications] Sent depeg alert for ${symbol} to user ${setting.userId}`
@@ -187,6 +190,18 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
   // Check each user's positions
   for (const setting of apySettings) {
     const threshold = parseFloat(setting.apyThreshold);
+    const recentNotifications = await getRecentNotifications(
+      setting.userId,
+      'apy_drop',
+      APY_DROP_COOLDOWN_MINUTES
+    );
+    const recentlyNotifiedPositionIds = new Set(
+      recentNotifications
+        .map((n) => n.metadata?.positionId)
+        .filter((positionId): positionId is string => Boolean(positionId))
+    );
+    const devices = await getActiveDevices(setting.userId);
+    const iosDevices = devices.filter((d) => d.deviceType === 'ios');
 
     // Get user's wallets
     const userWallets = await getUserWallets(setting.userId);
@@ -227,17 +242,9 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
         continue; // APY is above threshold, no alert needed
       }
 
-      // Check spam prevention
-      const recentNotifications = await getRecentNotifications(
-        setting.userId,
-        'apy_drop',
-        APY_DROP_COOLDOWN_MINUTES
-      );
-
-      // Check if we already sent a notification for this position recently
-      const alreadySent = recentNotifications.some(
-        (n) => n.metadata?.positionId === position.id
-      );
+      // Check if we already sent a notification for this position recently.
+      // Include notifications sent earlier in this same run.
+      const alreadySent = recentlyNotifiedPositionIds.has(position.id);
 
       if (alreadySent) {
         console.log(
@@ -265,9 +272,6 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
       }
 
       // Send to iOS devices (APNs)
-      const devices = await getActiveDevices(setting.userId);
-      const iosDevices = devices.filter((d) => d.deviceType === 'ios');
-
       for (const device of iosDevices) {
         const sent = await sendApnsApyDropNotification({
           deviceToken: device.pushToken,
@@ -304,6 +308,7 @@ async function checkApyDropNotifications(settings: any[]): Promise<void> {
             apyWindow,
           },
         });
+        recentlyNotifiedPositionIds.add(position.id);
 
         console.log(
           `[notifications] Sent ${windowLabel} APY alert for ${position.displayName} to user ${setting.userId}`
