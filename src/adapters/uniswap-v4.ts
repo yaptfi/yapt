@@ -341,8 +341,10 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
 
       return amount0Usd + amount1Usd;
     } catch (error) {
-      console.error('Error estimating liquidity value:', error);
-      return 0;
+      const errMsg = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to estimate liquidity value for pool ${poolId} (ticks ${tickLower}/${tickUpper}): ${errMsg}`
+      );
     }
   }
 
