@@ -165,6 +165,7 @@
   "infinifi-liusd-4w": {
     "name": "Infinifi Locked iUSD (4w)",
     "token": "0x66bcf6151d5558afb47c38b20663589843156078",
+    "lockingController": "0x1d95cC100D6Cd9C7BbDbD7Cb328d99b3D6037fF7",
     "baseAsset": "iUSD",
     "decimals": 18,
     "unwindingEpochs": 4,

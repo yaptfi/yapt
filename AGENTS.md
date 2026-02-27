@@ -38,6 +38,7 @@ Produce code that is correct, secure, clear, maintainable, and efficient. Follow
 Docker note:
 - `docker compose up -d` is supported, but migrations run from host (production image installs only production deps).
 - Production compose commands should use both files: `docker-compose.yml` + `docker-compose.prod.yml`.
+- Docker is used for all human testing and deployment. Deployment is done by pushing to github and using github runners to run docker compose on the server, including running migrations.
 
 ## Auth and Access
 - Auth is WebAuthn/passkey based (`src/routes/auth.ts`) with session cookies.
