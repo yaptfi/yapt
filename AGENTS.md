@@ -1,200 +1,122 @@
 # AGENTS.md
 
-Guidance for coding agents working in this repository. This file applies to the entire repo (root scope).
+Guidance for coding agents working in this repository. Applies repo-wide.
 
-## Project Overview
-- Purpose: Backend service that discovers DeFi yield positions for Ethereum wallets and tracks stablecoin-denominated income and APY.
-- Stack: Node.js 20+, TypeScript, Fastify, ethers v6, PostgreSQL, BullMQ (Redis), Jest, ESLint.
-- Entrypoint: `src/index.ts` (serves REST API under `/api`). Frontend now lives under `frontend/` and is served separately.
-- Jobs: Hourly updates scheduled via BullMQ in `src/jobs/scheduler.ts`.
+## Project Purpose
+- Yapt tracks stablecoin-focused DeFi yield for Ethereum wallets.
+- Backend discovers positions, stores snapshots, computes APY/yield metrics, and serves REST APIs under `/api`.
+- Frontend is a separate static app in `frontend/`.
 
-Recent updates (Oct 2025)
-- Aave v3 optimizations: Multicall3 batching + per‑wallet cache for aToken balances (cuts duplicate RPCs); in‑memory last‑scanned block cursor to shrink log windows; global RPC throttling to respect provider per‑second caps.
-- Yearn V3 improvements: support for gauge share tokens via `gaugeToken` in protocol config; distinct `shareDecimals` vs underlying `decimals`; more robust net‑flow + value paths for ERC4626 vaults.
-- Rewards positions (e.g., Convex cvxCRV): APY disabled by design; snapshots store yield‑only deltas; UI/API hide APY and show absolute yield projections.
-- New protocol adapter: Morpheus Gauntlet USDC Prime (gtUSDC) as ERC4626 (config key `morpheus-gtusdc-prime`).
-- Frontend: Login screen now exposes a "View as guest" link pointing to a predefined wallet (resolves via `/api/admin/wallets`).
-- **RPC Provider Routing** (Nov 2025): Capability-based routing system directs block scans to capable providers (Infura) while load-balancing normal calls across all providers (including Alchemy free tier). Providers have `supportsLargeBlockScans` flag. See `docs/rpc-provider-routing.md` for full details.
+## Engineering principles
+Produce code that is correct, secure, clear, maintainable, and efficient. Follow existing project conventions unless clearly harmful. Prefer simple, explicit solutions over clever ones. Use strong typing wherever possible. Keep concerns separated and side effects at the boundaries. Remove real duplication, but do not over-abstract. Write code that is easy for other humans and agents to understand and extend. Validate all external input, use safe APIs, avoid hardcoded secrets, and do not log sensitive data. Handle errors explicitly and with useful context. Avoid obvious code smells. Keep changes focused and minimal. Add or update unit and integration tests where appropriate, including edge cases and regressions. Do not consider work complete unless the code builds, passes checks, and the changed behavior is adequately tested and documented.
 
-Useful docs: `backend/README.md` (backend usage), `frontend/README.md` (UI), `DOCKER_DEPLOY.md` (containerized), `CLAUDE.md` (system architecture + adapter tips).
+## Stack
+- Node.js 20+, TypeScript, Fastify, ethers v6
+- PostgreSQL, Redis, BullMQ
+- Jest, ESLint, ts-jest
+
+## Key Paths
+- `src/index.ts`: API entrypoint and plugin init
+- `src/routes/*`: API route handlers
+- `src/services/*`: business logic (discovery, updates, notifications)
+- `src/adapters/*`: protocol adapters
+- `src/plugins/*`: plugin loader/registry and built-in protocol plugin wrappers
+- `src/models/*`: DB access layer
+- `src/utils/*`: config, DB, APY, Ethereum/RPC helpers
+- `config/protocols.json`, `config/abis/*`: protocol and ABI config
+- `migrations/*.js`: schema/data migrations
 
 ## Runbook
-- Install deps: `npm install`
-- Configure env: copy `.env.example` to `.env` and set `ETH_RPC_URL`, `DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`.
-- DB migrations: `npm run migrate` (uses `node-pg-migrate`).
-- Dev server: `npm run dev` (tsx watch).
-- Build/start: `npm run build` then `npm start`.
-- Tests: `npm test` (Jest via ts-jest).
-- Lint/typecheck: `npm run lint` and `npm run typecheck`.
+- Install: `npm install`
+- Configure env: copy `.env.example` to `.env`
+- Required env in practice: `DATABASE_URL`, `REDIS_URL`, `SESSION_SECRET`, and at least one RPC source (`ETH_RPC_URL` or DB-configured providers)
+- Migrate DB: `npm run migrate`
+- Dev: `npm run dev`
+- Build/start: `npm run build` then `npm start`
+- Quality checks: `npm run typecheck`, `npm run lint`, `npm test`
 
-Docker notes
-- Quick start: `docker compose up -d` with `.env` prepared. API at http://localhost:3000
-- Known caveat: Migrations run from host, not container, because `node-pg-migrate` is a devDependency and the production image uses `npm ci --only=production`.
+Docker note:
+- `docker compose up -d` is supported, but migrations run from host (production image installs only production deps).
+- Production compose commands should use both files: `docker-compose.yml` + `docker-compose.prod.yml`.
 
-## Code Conventions
-- TypeScript strict mode; keep types precise. Prefer explicit types on exported functions.
-- Use `BigInt` for on-chain quantities; convert with `formatUnits`/`parseUnits` in `src/utils/ethereum.ts`.
-- Never rely on JS floating-point for DB writes of monetary values. When writing numeric to Postgres `NUMERIC`, convert to strings (see `createSnapshot`).
-- Environment access goes through `getEnvVar` in `src/utils/config.ts` for fail-fast behavior.
-- Don’t hardcode addresses/decimals/ABIs. Use `config/protocols.json` and `config/abis/*`. Load via `getProtocolConfig()` and `getAbi()`.
-- Rate limiting: Discovery and updates throttle with `sleep(1000)` between items to respect RPC rate limits. Preserve or justify any changes.
-- RPC throttling (new): In addition to the above sleeps, use the global `rpcThrottle()` helper in `src/utils/ethereum.ts` before issuing multiple JSON‑RPC calls in the same code path (e.g., back‑to‑back `queryFilter`, `balanceOf` + `convertToAssets`). Default interval is 1000ms (override with `RPC_MIN_INTERVAL_MS`).
-- Logging: Use Fastify logger (`server.log`) in routes; `console` is acceptable in adapter/service internals but avoid logging secrets or full payloads. Avoid noisy logs in hot paths.
-- Errors: Fail soft for per-protocol/per-position operations; log and continue so one failure doesn’t stop the batch.
+## Auth and Access
+- Auth is WebAuthn/passkey based (`src/routes/auth.ts`) with session cookies.
+- Use `requireAuth`/`requireAdmin` middleware for protected routes.
+- Preserve per-user data isolation: API reads must be scoped to the authenticated user (typically via `user_wallet` links), not global wallet/position tables.
+- Guest endpoints under `/api/guest/*` are intentionally public and must remain read-only.
 
-Database conventions
-- Model files live in `src/models/*` and must use parameterized queries.
-- For any data returned to API, alias snake_case columns to camelCase using explicit `SELECT ... AS "camelCase"`. Do not `SELECT *` in API-facing queries.
-- Schema evolves via `migrations/*.js` with `node-pg-migrate`. Prefer idempotent, reversible changes and safe data migrations.
-- UUIDs: The initial migration enables `uuid-ossp`. Be aware that `gen_random_uuid()` requires `pgcrypto` (not enabled here). If you add a down migration relying on it, also enable `pgcrypto` or use `uuid_generate_v4()` consistently.
+## Environment Notes
+- WebAuthn env is important in production: `RP_NAME`, `RP_ID`, `ORIGIN` (plus `ALLOWED_ORIGINS` for CORS).
+- `RP_ID` must be a domain (not an IP) for WebAuthn on non-localhost deployments.
+- Optional iOS push support uses APNs env vars (`APNS_KEY_PATH`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`).
 
-Testing
-- Unit tests live under `src/**` and use ts-jest. Existing coverage focuses on APY utilities (`src/utils/apy.test.ts`).
-- Add tests for pure logic (math, helpers). Avoid networked/E2E tests that require Ethereum or external services.
-- Keep tests deterministic and fast; no sleeps and no RPC by default.
+## Coding Rules
+- Keep TypeScript strict and types explicit on exported APIs.
+- Use `BigInt` for on-chain quantities; convert with `formatUnits`/`parseUnits`.
+- Do not write JS floating-point values directly to Postgres `NUMERIC`; convert to strings (see `createSnapshot`).
+- Use `getEnvVar` from `src/utils/config.ts` for required env access.
+- Do not hardcode protocol addresses/ABIs/decimals; use config + loaders.
+- Keep route handlers thin; put data shaping/business logic in services/models.
+- Log with `server.log` in routes; avoid secrets and noisy hot-path logging.
+- Fail soft per protocol/position where possible (log and continue).
 
-## API & Routing
-- REST routes in `src/routes/*` register under `/api`. Maintain response shapes shown in `README.md` examples.
-- Prefer enriching data in service layer (`src/services/*`). Keep route handlers thin.
-- Rewards positions in API responses: For positions with `measureMethod: 'rewards'`, the API omits APY fields (`apy`, `apy7d`, `apy30d`) and provides absolute yield projections (avg daily, projected monthly/yearly) when available. This is reflected in both authenticated and guest routes.
-- Rate limit manual refreshes in `src/routes/portfolio.ts` (5-minute cooldown). Preserve this guard.
+## Database Conventions
+- Use parameterized SQL in `src/models/*`.
+- For API-facing reads, alias snake_case to camelCase explicitly.
+- Avoid `SELECT *` in API-facing queries.
+- Use migrations for schema changes; keep them reversible and safe.
+- UUIDs are based on `uuid-ossp`; use `uuid_generate_v4()` unless you explicitly enable `pgcrypto`.
 
-## Scheduler & Jobs
-- BullMQ queue name: `position-updates`. A repeatable job runs hourly (`'0 * * * *'`).
-- Worker concurrency is 5; leave conservative unless you’ve validated provider limits.
-- Updating a wallet enqueues per-wallet jobs and calls `updateWallet` with a 1s delay between positions.
-- Global throttling & cursors (new):
-  - `src/services/update.ts` fetches `currentBlock` once per position and reuses it.
-  - Maintains an in‑memory `lastScannedBlocks` cursor per position to bound log windows for net‑flows; adapters should return `toBlock` to advance the cursor.
-  - Combined with `rpcThrottle()`, this keeps provider calls within per‑second caps.
+## Scheduler and Update Behavior
+- Queue: `position-updates` (`src/jobs/scheduler.ts`).
+- Worker concurrency is intentionally `1` (sequential wallet processing).
+- Hourly update job is scheduled at `UPDATE_CRON_MINUTE` (default `38`), not necessarily minute `0`.
+- Weekly cleanup runs Sunday 02:00 UTC.
+- Discovery and update logic treat sub-$10 positions as dust/exit cases.
+- Flow detection scans are removed in current update path; APY is snapshot-based and reset-aware.
+- `measureMethod: 'rewards'` positions hide APY fields and use absolute yield projections.
 
-## Protocol Adapters
-- Location: `src/adapters/*`. Implement `BaseProtocolAdapter` with methods:
-  - `discover(walletAddress)`: Return `Partial<Position>[]` for non-zero balances; include `metadata` with everything needed later (addresses, decimals, type, walletAddress).
-  - `readCurrentValue(position)`: Return USD value. For ERC4626 vaults, convert shares to assets via `convertToAssets`. Use stable price overrides from `getStablePriceOverrides()`; default to 1.0 for stables.
-  - `calcNetFlows(position, fromBlock, toBlock)`: Prefer `detectNetFlowsFromTransfers` over bespoke event parsing when possible. Treat incoming transfers as deposits (+) and outgoing as withdrawals (-). For reward-only positions, treat claims as withdrawals on the reward token.
-- Register new adapters in `src/adapters/index.ts` and add config/ABI entries:
-  - `config/protocols.json`: Add addresses/decimals/type and `abiKeys`.
-  - `config/abis/<Key>.json`: Include required ABI fragments.
-- Database `protocol` row: Either insert manually or add a migration that upserts the protocol (`key`, `name`). Ensure positions upsert on `(wallet_id, protocol_position_key)`.
+## RPC and Provider Routing
+- RPC rate limiting is primarily handled by `RPCManager` (not fixed sleep loops).
+- `rpcThrottle()` is currently a compatibility no-op; keep existing callsites consistent with nearby code patterns.
+- Normal calls (`balanceOf`, reads, etc.) should use `getProvider()`/`getContract()` (load-balanced path).
+- Historical scans (`queryFilter`/`getLogs`) should use a scan-capable provider via `getScanCapableProvider()`.
+- If no scan-capable provider is available, skip that protocol gracefully and log a warning.
+- `supports_large_block_scans` comes from migration `1733000030000_add-rpc-supports-large-block-scans.js`.
 
-Adapter guidance (recent patterns)
-- ERC4626 vaults: Distinguish between underlying `decimals` and vault share `shareDecimals`; read shares via `balanceOf`, convert with `convertToAssets`, price via stable override when applicable.
-- Yearn V3 vaults: You may specify an optional `gaugeToken` in `config/protocols.json` for gauge‑wrapped shares. The adapter detects balances on gauge or vault share token and tracks transfers on the chosen share token.
-- Aave v3: Use the built‑in per‑wallet aToken balance cache (populated via Multicall3) to avoid duplicate `balanceOf` calls in discover and read; prefer the cache and batch fetch on cache miss.
-- Net‑flows: Prefer a single log scan per token per window; the service maintains a last‑scanned block cursor. Avoid issuing two separate requests when one can be filtered client‑side.
-- NFT-based LP positions (Uniswap v3/v4): See detailed guidance below for discovery, ownership model, tick math, and serialization.
+## Adapter and Plugin Guidance
+- Implement `IProtocolAdapter`/`BaseProtocolAdapter` in `src/sdk/adapter.ts`.
+- Required methods: `discover(walletAddress)`, `readCurrentValue(position)`.
+- `calcNetFlows` is optional/deprecated in current architecture.
+- Built-in adapters are loaded via plugin wrappers in `src/plugins/builtin/*`.
+- In adapter value reads, do not swallow RPC failures and return `0`; throw with context so updates retry instead of archiving positions as false exits.
+- Return `0` only for confirmed on-chain zero balances/reward values.
+- For a new protocol:
+  - Add/extend adapter code.
+  - Register/load via built-in plugin wrapper.
+  - Add protocol config + ABI entries.
+  - Ensure protocol DB row (`protocol.key`, `protocol.name`) exists via migration or seed.
+- Metadata must stay JSON-serializable (convert `BigInt` to string before persistence).
 
-InfiniFi locking adapters (liUSD buckets)
-- Verified contracts (Ethereum mainnet):
-  - `siUSD` (StakedTokenV2 / ERC4626): `0xdbdc1ef57537e34680b898e1febd3d68c7389bcb`
-  - `liUSD-4w` (LockedPositionTokenV2): `0x66bcf6151d5558afb47c38b20663589843156078`
-- `liUSD-*` tokens are restricted share tokens. Their ABI includes `core()`, `unwindingEpochs()`, `mint()`, `burn()`, transfer restriction controls, and ERC20 methods; they do **not** expose `convertToAssets()` or a direct price function.
-- On-chain valuation source of truth is the `LockingController` contract:
-  - `shareToken(uint32 unwindingEpochs) -> address` maps bucket length to share token.
-  - `exchangeRate(uint32 unwindingEpochs) -> uint256` returns share-token to receipt-token rate for that bucket.
-- Use bucket epoch `4` for `liUSD-4w` (confirmed by `liUSD-4w` constructor arg `unwindingEpochs = 4` on Etherscan).
-- Math/scaling: locking contracts use `ScaledMath` (`RAY = 1e27`) internally. Treat `exchangeRate` as protocol-scaled and normalize before USD conversion.
-- Practical adapter path:
-  - Discover via `balanceOf(wallet)` on known bucket tokens (or controller `shareToken()` lookup if integrating multiple buckets).
-  - Value as `lockedBalance * normalizedExchangeRate`, then price receipt asset with stable override (`iUSD` default `1.0`).
-  - If the controller receipt token is itself ERC4626 in a future deployment, add a second conversion step (`convertToAssets`) before USD pricing.
-- Prefer on-chain `exchangeRate()` over `stats.infinifi.xyz` for canonical valuation. Treat stats as UI/cache/fallback only.
-- For net flows, prefer controller events (`PositionCreated`, `PositionIncreased`, `PositionModified`, `PositionUnwound`) over raw transfer inference when feasible.
+Protocol-specific gotchas worth preserving:
+- Yearn-style ERC4626 vaults can have different share vs asset decimals (`shareDecimals` vs `decimals`).
+- Uniswap v4 discovery must scan NFT transfer events and verify current `ownerOf`.
+- For Uniswap v4 pool reads, use the Position Manager as owner when querying position state.
+- Decode packed int24 ticks with proper two's-complement conversion.
 
-NFT-based LP position adapters (Uniswap v3/v4)
-- **Discovery**: Scan Transfer events on Position Manager NFT contract (not ERC721Enumerable). Query both received (`Transfer(null, wallet)`) and sent (`Transfer(wallet, null)`) events to filter out transferred-away NFTs. Verify current ownership with `ownerOf(tokenId)`.
-- **Ownership model**: Position Manager contract owns the actual liquidity in the pool; users own NFT tokens that represent claims on that liquidity. When querying pool state (e.g., `getPositionInfo`), use Position Manager address as owner, NOT the wallet address.
-- **Tick unpacking**: For packed position data, use proper two's complement conversion for int24 ticks:
-  ```typescript
-  const tickUint = Number((info >> 8n) & 0xFFFFFFn);
-  const tick = tickUint >= (1 << 23) ? tickUint - (1 << 24) : tickUint;
-  ```
-- **Liquidity value**: Use proper Uniswap tick math to calculate token amounts from liquidity. Get current pool price (`getSlot0`), calculate sqrt prices at tick bounds (`getSqrtRatioAtTick`), then use `getAmountsForLiquidity` formula. For stablecoin pairs near 1:1, this is critical for accuracy.
-- **Fee calculation**: Use formula `(feeGrowthCurrent - feeGrowthLast) * liquidity / Q128` where Q128 = 2^128. Query both current fee growth (`getFeeGrowthInside`) and last recorded fee growth (`getPositionInfo`) for each token.
-- **BigInt serialization**: Position metadata may contain BigInt values (fees, tick spacing, etc.). Convert to strings before storing in database: `fee: poolKey.fee.toString()`. JavaScript's JSON.stringify cannot handle BigInt and will throw "Do not know how to serialize a BigInt".
-- **Net flows**: Track `IncreaseLiquidity` (deposits) and `DecreaseLiquidity` (withdrawals) events on Position Manager, filtering by tokenId. Sum token amounts assuming $1.00 for stablecoins.
-- **RPC Provider Routing**: IMPORTANT - Use `getScanCapableProvider()` for historical event queries (see below).
+## API and Frontend Notes
+- Routes in `src/routes/*` mount under `/api`.
+- Guest API is under `/api/guest/*`; default guest wallet comes from `GUEST_DEFAULT_WALLET_ID`.
+- Frontend remains framework-free static HTML/CSS/JS in `frontend/`; do not introduce build tooling.
 
-RPC Provider Routing for Adapters
-- **Normal calls** (balanceOf, convertToAssets, current state): Use regular `getProvider()` or `getContract()` - these route through the load balancer.
-- **Block scanning** (queryFilter, getLogs for historical events): Use scan-capable provider to avoid hitting provider limits:
-  ```typescript
-  const { getProvider } = await import('../utils/ethereum');
-  const proxyProvider = getProvider();
-  let scanProvider;
+## Testing Expectations
+- Prefer deterministic unit tests for pure logic.
+- Avoid network-dependent tests by default.
+- Existing unit tests include APY utilities and selected adapter logic.
 
-  if ('getRPCManager' in proxyProvider && typeof proxyProvider.getRPCManager === 'function') {
-    const manager = (proxyProvider as any).getRPCManager();
-    scanProvider = manager.getScanCapableProvider();
-
-    if (!scanProvider) {
-      console.warn('[ProtocolName] No scan-capable RPC provider available - skipping discovery');
-      return [];
-    }
-  } else {
-    scanProvider = proxyProvider; // Fallback for single-provider setups
-  }
-
-  const contract = new ethers.Contract(address, abi, scanProvider);
-  const events = await contract.queryFilter(filter); // Uses scan-capable provider
-  ```
-- **Why this matters**: Alchemy free tier limits eth_getLogs to 10 blocks. Infura supports 100k+ blocks. By routing scans to capable providers, we can use Alchemy for fast balance checks while Infura handles heavy historical scans.
-- **Graceful degradation**: If no scan-capable providers available, skip the protocol and log a warning. Don't throw errors that stop discovery for other protocols.
-
-Position semantics
-- `countingMode`:
-  - `count`: principal + yield count toward portfolio.
-  - `partial`: only stable-yield leg counts (e.g., reward-only adapters).
-  - `ignore`: excluded from totals.
-- `measureMethod` hints UI/API behavior:
-  - `balance`/`exchangeRate`/`rebaseIndex`: APY shown; income from percentage-based estimate.
-  - `rewards`: APY generally hidden; use absolute yield metrics from recent snapshots.
-
-APY calculation and display
-- APY is computed on demand from snapshots using a simple two‑point method with flows correction, anchored at resets:
-  - 4h APY (“recent”): latest snapshot vs. snapshot closest to 4 hours earlier (reference must be ≥59 minutes old).
-  - 7d APY: latest vs. snapshot closest to 7 days earlier; if a reset occurred within the window, use the most recent reset as the baseline.
-  - 30d APY: latest vs. snapshot closest to 30 days earlier; likewise anchored at the most recent reset when applicable.
-- Each APY uses the actual elapsed time between those two points and subtracts summed `net_flows_usd` within the window from the base before annualizing.
-- Display rule: hide 7d APY when it rounds (2 decimals, percent) to the same value as 4h; hide 30d APY when it rounds to the same value as the displayed 7d APY (or 4h if 7d hidden).
-
-APY reset rules
-- The updater creates a reset snapshot (`is_reset = true`) when a position experiences a large change:
-  - Large explained flow (big deposit/withdrawal in the window), or
-  - Large unexplained change (value drift not explained by flows).
-- Resets segment APY history; two‑point calculations never cross a reset boundary (they anchor to the most recent reset if it’s within the requested window).
-
-## Public UI
-- Static files live in `frontend/` and provide a minimal dashboard. Keep assets simple and framework-free.
-- API base defaults to `/api`; configurable via `frontend/config.js` when served from a different origin.
-- Do not introduce client build tooling or frameworks here.
-- Guest view link (new): The login screen includes a “View as guest” link to a predefined wallet. It resolves the wallet ID via `/api/admin/wallets` and navigates to `guest.html?wallet=<id>`.
-
-## Review Checklist (before opening a PR or finalizing changes)
-- `npm run typecheck` passes.
-- `npm run lint` passes (no unused vars; `_`-prefixed args allowed).
-- `npm test` passes (and you added tests for new pure logic).
-- `npm run build` produces a working `dist/`.
-- No hard-coded secrets or RPC URLs. Uses `getEnvVar`.
-- DB queries alias columns for API responses; no `SELECT *` leaks.
-- New adapters wired into registry and `config/protocols.json` with ABIs present.
-- Logs are informative but not noisy; no sensitive data.
-- RPC optimization sanity:
-  - `rpcThrottle()` used where high‑frequency calls might burst (e.g., consecutive `queryFilter` or paired value reads).
-  - Multicall batching preferred over multiple sequential `eth_call`s when safe.
-
-## Known Gaps / Caveats
-- Single-user MVP: Session plugin is present, but wallets/positions are globally visible. Do not implement multi-tenancy unless explicitly requested.
-- RPC resilience: Provider-specific routing is implemented (see above). Automatic failover works for load-balanced calls but not for direct scan-capable provider access. Health tracking with consecutive error counting and backoff periods is in place.
-- RPC capping: Providers like Infura enforce per‑second caps. The codebase includes a global throttle and 1s inter‑item sleeps; avoid introducing new bursts. The capability-based routing system (Nov 2025) allows mixing providers with different limits (e.g., Alchemy free tier for fast calls, Infura for scans).
-- Docker migration caveat as noted above; run migrations from host.
-- Database schema: New `rpc_provider` table with `supports_large_block_scans` column. Run migration 1733000030000 to add the column.
-
-## Safe Changes for Agents
-- Add or tweak adapters following the interface and config patterns.
-- Improve APY math/tests in `src/utils/apy.ts` and `src/utils/apy.test.ts`.
-- Extend routes to expose additional read-only views of existing data.
-- Add idempotent migrations for schema improvements and protocol seeds.
-- Bug fixes that align with conventions above (avoid broad refactors).
-- RPC efficiency tweaks consistent with the patterns above (e.g., batching via Multicall, adding `rpcThrottle()` around tight call sequences) are welcome.
+## Useful Docs
+- `README.md`
+- `docs/rpc-provider-routing.md`
+- `docs/RPC_MANAGER.md`
+- `docs/ios-client.md`
+- `frontend/README.md`
