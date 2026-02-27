@@ -186,11 +186,56 @@ async function start() {
           const skipProps = ['then', 'catch', 'constructor', 'status', 'on', 'once', 'off', 'emit', 'options', 'isCluster'];
           const timeoutRedisClient = new Proxy(redisClient, {
             get(target, prop) {
-              const original = (target as any)[prop];
+              const command = typeof prop === 'string' ? prop : String(prop);
+              let original = (target as any)[prop];
+
+              // connect-redis expects node-redis's mGet naming; ioredis uses mget.
+              if (command === 'mGet' && typeof (target as any).mget === 'function') {
+                original = (target as any).mget;
+              }
+
+              // connect-redis may call scanIterator, which ioredis doesn't provide.
+              if (command === 'scanIterator' && typeof original !== 'function' && typeof (target as any).scan === 'function') {
+                return async function* (options: { MATCH?: string; COUNT?: number } = {}) {
+                  let cursor = '0';
+                  const match = options.MATCH || '*';
+                  const count = options.COUNT || 100;
+
+                  do {
+                    const [nextCursor, keys] = await (target as any).scan(
+                      cursor,
+                      'MATCH',
+                      match,
+                      'COUNT',
+                      count
+                    );
+                    cursor = nextCursor;
+                    yield Array.isArray(keys) ? keys : [];
+                  } while (cursor !== '0');
+                };
+              }
 
               // If it's a function and not in skip list, wrap it with timeout
-              if (typeof prop === 'string' && !skipProps.includes(prop) && typeof original === 'function') {
-                return function(this: any, ...args: any[]) {
+              if (typeof command === 'string' && !skipProps.includes(command) && typeof original === 'function') {
+                return function(this: any, ...rawArgs: any[]) {
+                  let args = rawArgs;
+
+                  // connect-redis v9 uses node-redis style set(key, value, {expiration:{type:'EX',value}})
+                  // ioredis requires set(key, value, 'EX', seconds)
+                  if (command === 'set' && rawArgs.length >= 3 && rawArgs[2] && typeof rawArgs[2] === 'object') {
+                    const options = rawArgs[2] as { expiration?: { type?: string; value?: number } };
+                    const expiration = options.expiration;
+                    if (expiration?.type === 'EX' && typeof expiration.value === 'number') {
+                      args = [rawArgs[0], rawArgs[1], 'EX', expiration.value];
+                    }
+                  } else if (command === 'del' && rawArgs.length === 1 && Array.isArray(rawArgs[0])) {
+                    // connect-redis passes del([key]); ioredis expects del(key1, key2, ...)
+                    args = rawArgs[0];
+                  } else if (command === 'mGet' && rawArgs.length === 1 && Array.isArray(rawArgs[0])) {
+                    // connect-redis passes mGet([keys]); ioredis expects mget(key1, key2, ...)
+                    args = rawArgs[0];
+                  }
+
                   const result = original.apply(target, args);
 
                   // If it returns a promise, add timeout
@@ -201,20 +246,27 @@ async function start() {
                       if (typeof arg === 'object') return '[object]';
                       return arg;
                     });
-                    server.log.info({ command: prop, args: logArgs }, `Redis ${prop} called`);
+                    server.log.info({ command, args: logArgs }, `Redis ${command} called`);
+
+                    let timeoutHandle: NodeJS.Timeout | undefined;
+                    const timeoutPromise = new Promise((_, reject) => {
+                      timeoutHandle = setTimeout(() => {
+                        server.log.error({ command }, `Redis ${command} timeout after 2s`);
+                        reject(new Error(`Redis ${command} timeout after 2s`));
+                      }, 2000);
+                    });
 
                     return Promise.race([
                       result.catch((err: any) => {
-                        server.log.error({ command: prop, error: err.message, args: logArgs }, `Redis ${prop} failed`);
+                        server.log.error({ command, error: err.message, args: logArgs }, `Redis ${command} failed`);
                         throw err;
                       }),
-                      new Promise((_, reject) =>
-                        setTimeout(() => {
-                          server.log.error({ command: prop }, `Redis ${prop} timeout after 2s`);
-                          reject(new Error(`Redis ${prop} timeout after 2s`));
-                        }, 2000)
-                      )
-                    ]);
+                      timeoutPromise,
+                    ]).finally(() => {
+                      if (timeoutHandle) {
+                        clearTimeout(timeoutHandle);
+                      }
+                    });
                   }
 
                   return result;
