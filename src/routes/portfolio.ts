@@ -154,11 +154,10 @@ export default async function portfolioRoutes(server: FastifyInstance) {
         return reply.send({ history: [] });
       }
 
-      // Build WHERE clause for wallet filtering
-      const walletFilter = `AND p.wallet_id = ANY($1::uuid[])`;
-
       // Get daily snapshots aggregated across positions (optionally filtered by wallet)
       // Only include positions with counting_mode = 'count' or 'partial'
+      // Include both active and archived positions so historical totals remain stable
+      // after exits/re-entries.
       // Use DISTINCT ON to get the latest snapshot per position per day
       const rows = await query<{
         date: string;
@@ -166,8 +165,8 @@ export default async function portfolioRoutes(server: FastifyInstance) {
         timestamp: Date;
       }>(
         `
-        WITH latest_daily_snapshots AS (
-          SELECT DISTINCT ON (p.id, DATE(ps.ts AT TIME ZONE 'UTC'))
+        WITH all_portfolio_snapshots AS (
+          SELECT
             p.id as position_id,
             DATE(ps.ts AT TIME ZONE 'UTC') as date,
             ps.value_usd,
@@ -175,8 +174,26 @@ export default async function portfolioRoutes(server: FastifyInstance) {
           FROM position_snapshot ps
           JOIN position p ON ps.position_id = p.id
           WHERE p.counting_mode IN ('count', 'partial')
-          ${walletFilter}
-          ORDER BY p.id, DATE(ps.ts AT TIME ZONE 'UTC'), ps.ts DESC
+            AND p.wallet_id = ANY($1::uuid[])
+          UNION ALL
+          SELECT
+            pa.id as position_id,
+            DATE(psa.ts AT TIME ZONE 'UTC') as date,
+            psa.value_usd,
+            psa.ts
+          FROM position_snapshot_archive psa
+          JOIN position_archive pa ON psa.position_id = pa.id
+          WHERE pa.counting_mode IN ('count', 'partial')
+            AND pa.wallet_id = ANY($1::uuid[])
+        ),
+        latest_daily_snapshots AS (
+          SELECT DISTINCT ON (position_id, date)
+            position_id,
+            date,
+            value_usd,
+            ts
+          FROM all_portfolio_snapshots
+          ORDER BY position_id, date, ts DESC
         )
         SELECT
           date::text as date,
