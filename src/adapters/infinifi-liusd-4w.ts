@@ -12,7 +12,8 @@ interface LockingControllerContract {
   exchangeRate(unwindingEpochs: number): Promise<bigint>;
 }
 
-export const INFINIFI_RATE_SCALE_DEFAULT = 10n ** 27n;
+export const INFINIFI_RATE_SCALE_DEFAULT = 10n ** 18n;
+const INFINIFI_RATE_SCALE_LEGACY_RAY = 10n ** 27n;
 
 export function parseRateScale(rateScale?: string): bigint {
   if (!rateScale) {
@@ -21,7 +22,18 @@ export function parseRateScale(rateScale?: string): bigint {
 
   try {
     const parsed = BigInt(rateScale);
-    return parsed > 0n ? parsed : INFINIFI_RATE_SCALE_DEFAULT;
+    if (parsed <= 0n) {
+      return INFINIFI_RATE_SCALE_DEFAULT;
+    }
+
+    // Backward compatibility: early liUSD-4w config used a RAY-like 1e27
+    // scale, but the controller exchangeRate is WAD (1e18). Normalize this
+    // to prevent false dust valuation and discovery skips.
+    if (parsed === INFINIFI_RATE_SCALE_LEGACY_RAY) {
+      return INFINIFI_RATE_SCALE_DEFAULT;
+    }
+
+    return parsed;
   } catch {
     return INFINIFI_RATE_SCALE_DEFAULT;
   }
@@ -101,7 +113,7 @@ export class InfinifiLiusd4wAdapter extends BaseProtocolAdapter {
           decimals: config.decimals ?? 18,
           lockingController,
           unwindingEpochs,
-          exchangeRateScale: config.exchangeRateScale || INFINIFI_RATE_SCALE_DEFAULT.toString(),
+          exchangeRateScale: parseRateScale(config.exchangeRateScale).toString(),
           baseAsset,
           type: config.type,
         },
