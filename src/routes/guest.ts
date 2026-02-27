@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { queryOne, query } from '../utils/db';
-import { getPositionMetrics } from '../services/update';
+import { enrichPositionsWithMetrics, getActualYieldSummaryForWallets } from '../services/position-view';
 
 interface Wallet {
   id: string;
@@ -91,147 +91,12 @@ export default async function guestRoutes(server: FastifyInstance) {
           [id]
         );
 
-        // Enrich positions with metrics
-        const enrichedPositions = await Promise.all(
-          positions.map(async (pos) => {
-            const metrics = await getPositionMetrics(pos.id, pos as any);
-
-            if (!metrics) {
-              return {
-                ...pos,
-                valueUsd: 0,
-                apy: null,
-                apy7d: null,
-                apy30d: null,
-                estDailyUsd: 0,
-                estMonthlyUsd: 0,
-                estYearlyUsd: 0,
-                lastUpdated: null,
-              };
-            }
-
-            const valueUsd = metrics.valueUsd || 0;
-
-            // Reward-based positions: hide APY and use absolute yield metrics
-            const isRewardBased = pos.measureMethod === 'rewards';
-            let estDailyUsd: number, estMonthlyUsd: number, estYearlyUsd: number;
-
-            if (isRewardBased && (metrics as any).absoluteYield) {
-              const a = (metrics as any).absoluteYield;
-              estDailyUsd = a.avgDailyYield;
-              estMonthlyUsd = a.projectedMonthlyYield;
-              estYearlyUsd = a.projectedYearlyYield;
-            } else {
-              const currentApy = metrics.apy7d || metrics.apy || 0;
-              estDailyUsd = (valueUsd * currentApy) / 365;
-              estMonthlyUsd = (valueUsd * currentApy) / 12;
-              estYearlyUsd = valueUsd * currentApy;
-            }
-
-            return {
-              id: pos.id,
-              walletId: pos.walletId,
-              displayName: pos.displayName,
-              baseAsset: pos.baseAsset,
-              countingMode: pos.countingMode,
-              measureMethod: pos.measureMethod,
-              valueUsd,
-              // Hide APY fields for reward-based positions
-              ...(!isRewardBased && {
-                apy: metrics.apy,
-                apy7d: metrics.apy7d,
-                apy30d: metrics.apy30d,
-              }),
-              estDailyUsd,
-              estMonthlyUsd,
-              estYearlyUsd,
-              lastUpdated: metrics.lastUpdated,
-              // Include absolute yield metrics for rewards if present
-              ...((metrics as any).absoluteYield && { absoluteYield: (metrics as any).absoluteYield }),
-            };
-          })
-        );
-
-        // Calculate actual yields from snapshots for different time periods
-        // Include BOTH active and archived positions - archived positions still earned real income
-        let actual24hYield = 0;
-        let actual7dYield = 0;
-        let actual30dYield = 0;
-
-        // 24 hours actual yield - sum all deltas in the period from BOTH active and archived positions
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const result24h = await query<{ total_yield: string }>(
-          `SELECT COALESCE(SUM(yield_delta_usd), 0) as total_yield
-           FROM (
-             -- Active positions
-             SELECT ps.yield_delta_usd
-             FROM position_snapshot ps
-             JOIN position p ON ps.position_id = p.id
-             WHERE p.wallet_id = $1
-               AND p.counting_mode IN ('count', 'partial')
-               AND ps.ts >= $2
-             UNION ALL
-             -- Archived positions (still earned real income before exit)
-             SELECT psa.yield_delta_usd
-             FROM position_snapshot_archive psa
-             JOIN position_archive pa ON psa.position_id = pa.id
-             WHERE pa.wallet_id = $1
-               AND pa.counting_mode IN ('count', 'partial')
-               AND psa.ts >= $2
-           ) combined`,
-          [id, twentyFourHoursAgo]
-        );
-        actual24hYield = result24h.length > 0 ? parseFloat(result24h[0].total_yield) : 0;
-
-        // 7 days actual yield - sum all deltas in the period from BOTH active and archived positions
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const result7d = await query<{ total_yield: string }>(
-          `SELECT COALESCE(SUM(yield_delta_usd), 0) as total_yield
-           FROM (
-             -- Active positions
-             SELECT ps.yield_delta_usd
-             FROM position_snapshot ps
-             JOIN position p ON ps.position_id = p.id
-             WHERE p.wallet_id = $1
-               AND p.counting_mode IN ('count', 'partial')
-               AND ps.ts >= $2
-             UNION ALL
-             -- Archived positions (still earned real income before exit)
-             SELECT psa.yield_delta_usd
-             FROM position_snapshot_archive psa
-             JOIN position_archive pa ON psa.position_id = pa.id
-             WHERE pa.wallet_id = $1
-               AND pa.counting_mode IN ('count', 'partial')
-               AND psa.ts >= $2
-           ) combined`,
-          [id, sevenDaysAgo]
-        );
-        actual7dYield = result7d.length > 0 ? parseFloat(result7d[0].total_yield) : 0;
-
-        // 30 days actual yield - sum all deltas in the period from BOTH active and archived positions
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const result30d = await query<{ total_yield: string }>(
-          `SELECT COALESCE(SUM(yield_delta_usd), 0) as total_yield
-           FROM (
-             -- Active positions
-             SELECT ps.yield_delta_usd
-             FROM position_snapshot ps
-             JOIN position p ON ps.position_id = p.id
-             WHERE p.wallet_id = $1
-               AND p.counting_mode IN ('count', 'partial')
-               AND ps.ts >= $2
-             UNION ALL
-             -- Archived positions (still earned real income before exit)
-             SELECT psa.yield_delta_usd
-             FROM position_snapshot_archive psa
-             JOIN position_archive pa ON psa.position_id = pa.id
-             WHERE pa.wallet_id = $1
-               AND pa.counting_mode IN ('count', 'partial')
-               AND psa.ts >= $2
-           ) combined`,
-          [id, thirtyDaysAgo]
-        );
-        actual30dYield = result30d.length > 0 ? parseFloat(result30d[0].total_yield) : 0;
+        const enrichedPositions = await enrichPositionsWithMetrics(positions);
+        const {
+          actual24hYield,
+          actual7dYield,
+          actual30dYield,
+        } = await getActualYieldSummaryForWallets([id]);
 
         return reply.send({
           wallet,

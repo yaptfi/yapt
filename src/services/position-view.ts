@@ -1,0 +1,160 @@
+import { queryOne } from '../utils/db';
+import { Position } from '../types';
+import { getPositionMetrics } from './update';
+import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
+
+export interface PositionLike {
+  id: string;
+  walletId: string;
+  displayName: string;
+  baseAsset: string;
+  countingMode: string;
+  measureMethod: string;
+  metadata?: Position['metadata'];
+}
+
+export interface EnrichedPositionView {
+  id: string;
+  walletId: string;
+  displayName: string;
+  baseAsset: string;
+  countingMode: string;
+  measureMethod: string;
+  valueUsd: number;
+  apy?: number | null;
+  apy7d?: number | null;
+  apy30d?: number | null;
+  estDailyUsd: number;
+  estMonthlyUsd: number;
+  estYearlyUsd: number;
+  lastUpdated: Date | null;
+  absoluteYield?: {
+    totalYield7d: number;
+    avgDailyYield: number;
+    projectedMonthlyYield: number;
+    projectedYearlyYield: number;
+  };
+}
+
+export interface ActualYieldSummary {
+  actual24hYield: number;
+  actual7dYield: number;
+  actual30dYield: number;
+}
+
+/**
+ * Enrich positions with APY/absolute-yield metrics and income projections.
+ * Shared by authenticated and guest position endpoints.
+ */
+export async function enrichPositionsWithMetrics(
+  positions: PositionLike[]
+): Promise<EnrichedPositionView[]> {
+  return Promise.all(
+    positions.map(async (position): Promise<EnrichedPositionView> => {
+      const metrics = await getPositionMetrics(position.id, position as unknown as Position);
+
+      if (!metrics) {
+        return {
+          id: position.id,
+          walletId: position.walletId,
+          displayName: position.displayName,
+          baseAsset: position.baseAsset,
+          countingMode: position.countingMode,
+          measureMethod: position.measureMethod,
+          valueUsd: 0,
+          apy: null,
+          apy7d: null,
+          apy30d: null,
+          estDailyUsd: 0,
+          estMonthlyUsd: 0,
+          estYearlyUsd: 0,
+          lastUpdated: null,
+        };
+      }
+
+      const isRewardBased = position.measureMethod === 'rewards';
+      let estDailyUsd: number;
+      let estMonthlyUsd: number;
+      let estYearlyUsd: number;
+
+      if (isRewardBased && metrics.absoluteYield) {
+        estDailyUsd = metrics.absoluteYield.avgDailyYield;
+        estMonthlyUsd = metrics.absoluteYield.projectedMonthlyYield;
+        estYearlyUsd = metrics.absoluteYield.projectedYearlyYield;
+      } else {
+        const currentApy = metrics.apy7d || metrics.apy || 0;
+        estDailyUsd = estimateDailyIncome(metrics.valueUsd, currentApy);
+        estMonthlyUsd = estimateMonthlyIncome(metrics.valueUsd, currentApy);
+        estYearlyUsd = estimateYearlyIncome(metrics.valueUsd, currentApy);
+      }
+
+      return {
+        id: position.id,
+        walletId: position.walletId,
+        displayName: position.displayName,
+        baseAsset: position.baseAsset,
+        countingMode: position.countingMode,
+        measureMethod: position.measureMethod,
+        valueUsd: metrics.valueUsd,
+        ...(!isRewardBased && {
+          apy: metrics.apy,
+          apy7d: metrics.apy7d,
+          apy30d: metrics.apy30d,
+        }),
+        estDailyUsd,
+        estMonthlyUsd,
+        estYearlyUsd,
+        lastUpdated: metrics.lastUpdated,
+        ...(metrics.absoluteYield && { absoluteYield: metrics.absoluteYield }),
+      };
+    })
+  );
+}
+
+/**
+ * Aggregate actual yield deltas for 24h/7d/30d windows across active + archived positions.
+ */
+export async function getActualYieldSummaryForWallets(walletIds: string[]): Promise<ActualYieldSummary> {
+  if (walletIds.length === 0) {
+    return {
+      actual24hYield: 0,
+      actual7dYield: 0,
+      actual30dYield: 0,
+    };
+  }
+
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+  const result = await queryOne<{
+    total_24h: string;
+    total_7d: string;
+    total_30d: string;
+  }>(
+    `SELECT
+      COALESCE(SUM(CASE WHEN ts >= $2 THEN yield_delta_usd ELSE 0 END), 0) as total_24h,
+      COALESCE(SUM(CASE WHEN ts >= $3 THEN yield_delta_usd ELSE 0 END), 0) as total_7d,
+      COALESCE(SUM(CASE WHEN ts >= $4 THEN yield_delta_usd ELSE 0 END), 0) as total_30d
+     FROM (
+       SELECT ps.ts, ps.yield_delta_usd
+       FROM position_snapshot ps
+       JOIN position p ON ps.position_id = p.id
+       WHERE p.wallet_id = ANY($1::uuid[])
+         AND p.counting_mode IN ('count', 'partial')
+       UNION ALL
+       SELECT psa.ts, psa.yield_delta_usd
+       FROM position_snapshot_archive psa
+       JOIN position_archive pa ON psa.position_id = pa.id
+       WHERE pa.wallet_id = ANY($1::uuid[])
+         AND pa.counting_mode IN ('count', 'partial')
+     ) combined`,
+    [walletIds, twentyFourHoursAgo, sevenDaysAgo, thirtyDaysAgo]
+  );
+
+  return {
+    actual24hYield: result ? parseFloat(result.total_24h) : 0,
+    actual7dYield: result ? parseFloat(result.total_7d) : 0,
+    actual30dYield: result ? parseFloat(result.total_30d) : 0,
+  };
+}
