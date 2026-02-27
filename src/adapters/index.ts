@@ -6,6 +6,7 @@ import { ConvexCvxCrvAdapter } from './convex-cvxcrv';
 import { CurveLendingWbtcAdapter } from './curve-lending-wbtc';
 import { ConvexCurveVaultAdapter } from './convex-curve-vault';
 import { InfinifiSiusdAdapter } from './infinifi-siusd';
+import { InfinifiLiusd4wAdapter } from './infinifi-liusd-4w';
 import { YearnV3Adapter } from './yearn-v3';
 import { UniswapV4Adapter } from './uniswap-v4';
 import { PendlePtAdapter } from './pendle-pt';
@@ -38,6 +39,7 @@ export {
   CurveLendingWbtcAdapter,
   ConvexCurveVaultAdapter,
   InfinifiSiusdAdapter,
+  InfinifiLiusd4wAdapter,
   YearnV3Adapter,
   UniswapV4Adapter,
   PendlePtAdapter,

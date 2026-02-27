@@ -85,6 +85,23 @@ Adapter guidance (recent patterns)
 - Net‑flows: Prefer a single log scan per token per window; the service maintains a last‑scanned block cursor. Avoid issuing two separate requests when one can be filtered client‑side.
 - NFT-based LP positions (Uniswap v3/v4): See detailed guidance below for discovery, ownership model, tick math, and serialization.
 
+InfiniFi locking adapters (liUSD buckets)
+- Verified contracts (Ethereum mainnet):
+  - `siUSD` (StakedTokenV2 / ERC4626): `0xdbdc1ef57537e34680b898e1febd3d68c7389bcb`
+  - `liUSD-4w` (LockedPositionTokenV2): `0x66bcf6151d5558afb47c38b20663589843156078`
+- `liUSD-*` tokens are restricted share tokens. Their ABI includes `core()`, `unwindingEpochs()`, `mint()`, `burn()`, transfer restriction controls, and ERC20 methods; they do **not** expose `convertToAssets()` or a direct price function.
+- On-chain valuation source of truth is the `LockingController` contract:
+  - `shareToken(uint32 unwindingEpochs) -> address` maps bucket length to share token.
+  - `exchangeRate(uint32 unwindingEpochs) -> uint256` returns share-token to receipt-token rate for that bucket.
+- Use bucket epoch `4` for `liUSD-4w` (confirmed by `liUSD-4w` constructor arg `unwindingEpochs = 4` on Etherscan).
+- Math/scaling: locking contracts use `ScaledMath` (`RAY = 1e27`) internally. Treat `exchangeRate` as protocol-scaled and normalize before USD conversion.
+- Practical adapter path:
+  - Discover via `balanceOf(wallet)` on known bucket tokens (or controller `shareToken()` lookup if integrating multiple buckets).
+  - Value as `lockedBalance * normalizedExchangeRate`, then price receipt asset with stable override (`iUSD` default `1.0`).
+  - If the controller receipt token is itself ERC4626 in a future deployment, add a second conversion step (`convertToAssets`) before USD pricing.
+- Prefer on-chain `exchangeRate()` over `stats.infinifi.xyz` for canonical valuation. Treat stats as UI/cache/fallback only.
+- For net flows, prefer controller events (`PositionCreated`, `PositionIncreased`, `PositionModified`, `PositionUnwound`) over raw transfer inference when feasible.
+
 NFT-based LP position adapters (Uniswap v3/v4)
 - **Discovery**: Scan Transfer events on Position Manager NFT contract (not ERC721Enumerable). Query both received (`Transfer(null, wallet)`) and sent (`Transfer(wallet, null)`) events to filter out transferred-away NFTs. Verify current ownership with `ownerOf(tokenId)`.
 - **Ownership model**: Position Manager contract owns the actual liquidity in the pool; users own NFT tokens that represent claims on that liquidity. When querying pool state (e.g., `getPositionInfo`), use Position Manager address as owner, NOT the wallet address.

@@ -162,6 +162,17 @@
     "countingMode": "count",
     "abiKeys": ["ERC20", "ERC4626"]
   },
+  "infinifi-liusd-4w": {
+    "name": "Infinifi Locked iUSD (4w)",
+    "token": "0x66bcf6151d5558afb47c38b20663589843156078",
+    "baseAsset": "iUSD",
+    "decimals": 18,
+    "unwindingEpochs": 4,
+    "exchangeRateScale": "1000000000000000000000000000",
+    "type": "exchangeRate",
+    "countingMode": "count",
+    "abiKeys": ["ERC20", "InfinifiLockedPositionTokenV2", "InfinifiLockingController"]
+  },
   "sky-savings-usds": {
     "name": "Sky Savings USDS",
     "token": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",

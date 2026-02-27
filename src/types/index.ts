@@ -142,6 +142,9 @@ export interface ProtocolConfig {
     depositToken?: string;
     curveVaultToken?: string;
     cvxCrvToken?: string;
+    lockingController?: string;
+    unwindingEpochs?: number;
+    exchangeRateScale?: string;
     rewardToken?: string;
     depositDecimals?: number;
     rewardDecimals?: number;
