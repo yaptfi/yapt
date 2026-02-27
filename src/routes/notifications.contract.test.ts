@@ -139,4 +139,15 @@ describe('notifications route response contracts', () => {
     expect(notification.createdAt).toBeDefined();
     expect(notification.sentAt).toBeDefined();
   });
+
+  test('GET /history rejects invalid pagination input', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/history?limit=abc&offset=-1',
+    });
+
+    expect(response.statusCode).toBe(400);
+    const payload = response.json() as { error: string };
+    expect(payload.error).toContain('Invalid limit');
+  });
 });

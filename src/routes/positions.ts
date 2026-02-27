@@ -21,6 +21,8 @@ interface GetSnapshotsQuery {
   to?: string;
 }
 
+const VALID_COUNTING_MODES: CountingMode[] = ['count', 'partial', 'ignore'];
+
 export default async function positionRoutes(server: FastifyInstance) {
   /**
    * GET /api/positions
@@ -93,6 +95,13 @@ export default async function positionRoutes(server: FastifyInstance) {
         const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
         const toDate = to ? new Date(to) : new Date();
 
+        if ((from && Number.isNaN(fromDate.getTime())) || (to && Number.isNaN(toDate.getTime()))) {
+          return reply.code(400).send({ error: 'Invalid date range. Use ISO-8601 timestamps for from/to.' });
+        }
+        if (fromDate > toDate) {
+          return reply.code(400).send({ error: '"from" must be before or equal to "to".' });
+        }
+
         const snapshots = await getSnapshotsInRange(id, fromDate, toDate);
 
         return reply.send({
@@ -131,6 +140,13 @@ export default async function positionRoutes(server: FastifyInstance) {
       const { countingMode, isActive } = request.body;
 
       try {
+        if (countingMode !== undefined && !VALID_COUNTING_MODES.includes(countingMode)) {
+          return reply.code(400).send({ error: 'Invalid countingMode. Must be one of: count, partial, ignore.' });
+        }
+        if (isActive !== undefined && typeof isActive !== 'boolean') {
+          return reply.code(400).send({ error: 'Invalid isActive. Must be a boolean.' });
+        }
+
         const position = await getPositionById(id);
         if (!position) {
           return reply.code(404).send({ error: 'Position not found' });

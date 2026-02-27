@@ -305,8 +305,24 @@ export default async function notificationRoutes(server: FastifyInstance) {
       }
 
       try {
-        const limit = Math.min(request.query.limit ? parseInt(request.query.limit) : 50, 100);
-        const offset = request.query.offset ? parseInt(request.query.offset) : 0;
+        const rawLimit = request.query.limit;
+        const rawOffset = request.query.offset;
+
+        if (rawLimit !== undefined && !/^\d+$/.test(rawLimit)) {
+          return reply.code(400).send({ error: 'Invalid limit. Must be a positive integer.' });
+        }
+        if (rawOffset !== undefined && !/^\d+$/.test(rawOffset)) {
+          return reply.code(400).send({ error: 'Invalid offset. Must be a non-negative integer.' });
+        }
+
+        const parsedLimit = rawLimit ? parseInt(rawLimit, 10) : 50;
+        const parsedOffset = rawOffset ? parseInt(rawOffset, 10) : 0;
+        const limit = Math.min(Math.max(parsedLimit, 1), 100);
+        const offset = Math.max(parsedOffset, 0);
+
+        if (request.query.type && !['depeg', 'apy', 'apy_drop'].includes(request.query.type)) {
+          return reply.code(400).send({ error: 'Invalid type. Must be one of: depeg, apy, apy_drop.' });
+        }
 
         // Map 'apy' to 'apy_drop' for backwards compatibility with iOS app
         let notificationType: NotificationType | undefined;
