@@ -456,8 +456,8 @@ async function loadPositions() {
           <tr>
             <th>Position</th>
             <th>Value (USD)</th>
-            <th>APY</th>
-            <th>7d APY</th>
+            <th>4h APY</th>
+            <th>7d APY*</th>
             <th>30d APY</th>
             <th>Est. Daily</th>
             <th>Est. Monthly</th>
