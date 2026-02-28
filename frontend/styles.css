@@ -141,6 +141,17 @@ header h1 {
   color: var(--success);
 }
 
+.portfolio-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.portfolio-value-projection {
+  color: var(--primary);
+}
+
 .income-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -169,13 +180,17 @@ header h1 {
 .income-value {
   font-size: 2rem;
   font-weight: 700;
-  color: var(--success);
+  color: var(--primary);
 }
 
 .income-actual {
   color: var(--text-dim);
   font-size: 0.875rem;
   font-weight: 400;
+}
+
+.income-actual-value {
+  color: var(--success);
 }
 
 .rates-header {
@@ -813,6 +828,16 @@ footer {
   /* Card padding reduction on mobile */
   .card {
     padding: 1.25rem;
+  }
+
+  /* Portfolio card header stacks vertically on mobile */
+  .portfolio-card-header {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .portfolio-card-header > div:last-child {
+    text-align: left;
   }
 
   /* Card headers stack vertically on mobile */

@@ -89,8 +89,16 @@
 
         <!-- Total Portfolio Value Card -->
         <div class="portfolio-card clickable" onclick="showHistoryChart()">
-          <span class="portfolio-label">TOTAL PORTFOLIO VALUE</span>
-          <span class="portfolio-value" id="totalValue">$0.00</span>
+          <div class="portfolio-card-header">
+            <div>
+              <span class="portfolio-label">TOTAL PORTFOLIO VALUE</span>
+              <span class="portfolio-value" id="totalValue">$0.00</span>
+            </div>
+            <div style="text-align: right;">
+              <span class="portfolio-label">EST. ANNUAL INCOME</span>
+              <span class="portfolio-value portfolio-value-projection" id="annualIncome">$0.00</span>
+            </div>
+          </div>
         </div>
 
         <!-- Estimated Income Section -->
@@ -99,17 +107,17 @@
           <div class="income-card">
             <span class="income-label">DAILY</span>
             <span class="income-value" id="dailyIncome">$0.00</span>
-            <span class="income-actual" id="dailyActual">Last 24H: +$0</span>
+            <span class="income-actual">Last 24H: <span class="income-actual-value" id="dailyActual">+$0</span></span>
+          </div>
+          <div class="income-card">
+            <span class="income-label">7 DAYS</span>
+            <span class="income-value" id="weeklyIncome">$0.00</span>
+            <span class="income-actual">Last 7D: <span class="income-actual-value" id="weeklyActual">+$0</span></span>
           </div>
           <div class="income-card">
             <span class="income-label">MONTHLY</span>
             <span class="income-value" id="monthlyIncome">$0.00</span>
-            <span class="income-actual" id="monthlyActual">Last 7D: +$0</span>
-          </div>
-          <div class="income-card">
-            <span class="income-label">YEARLY</span>
-            <span class="income-value" id="yearlyIncome">$0.00</span>
-            <span class="income-actual" id="yearlyActual">Last 30D: +$0</span>
+            <span class="income-actual">Last 30D: <span class="income-actual-value" id="monthlyActual">+$0</span></span>
           </div>
         </div>
 

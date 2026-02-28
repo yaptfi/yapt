@@ -522,16 +522,19 @@ async function loadPortfolioSummary() {
     }, null);
 
     document.getElementById('totalValue').textContent = formatCurrency(totalValueUsd);
+    document.getElementById('annualIncome').textContent = formatCurrency(estYearlyUsd);
 
     // Update income estimates with actual yields displayed below
+    const estWeeklyUsd = estDailyUsd * 7;
+
     document.getElementById('dailyIncome').textContent = formatCurrency(estDailyUsd);
-    document.getElementById('dailyActual').textContent = `Last 24H: +${formatCurrency(actual24hYield)}`;
+    document.getElementById('dailyActual').textContent = `+${formatCurrency(actual24hYield)}`;
+
+    document.getElementById('weeklyIncome').textContent = formatCurrency(estWeeklyUsd);
+    document.getElementById('weeklyActual').textContent = `+${formatCurrency(actual7dYield)}`;
 
     document.getElementById('monthlyIncome').textContent = formatCurrency(estMonthlyUsd);
-    document.getElementById('monthlyActual').textContent = `Last 7D: +${formatCurrency(actual7dYield)}`;
-
-    document.getElementById('yearlyIncome').textContent = formatCurrency(estYearlyUsd);
-    document.getElementById('yearlyActual').textContent = `Last 30D: +${formatCurrency(actual30dYield)}`;
+    document.getElementById('monthlyActual').textContent = `+${formatCurrency(actual30dYield)}`;
     // Render income context based on estimated annual income
     renderIncomeContext(estYearlyUsd);
     document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;

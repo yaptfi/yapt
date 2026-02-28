@@ -23,8 +23,16 @@
 
         <!-- Total Portfolio Value Card -->
         <div class="portfolio-card">
-          <span class="portfolio-label">TOTAL PORTFOLIO VALUE</span>
-          <span class="portfolio-value" id="totalValue">$0.00</span>
+          <div class="portfolio-card-header">
+            <div>
+              <span class="portfolio-label">TOTAL PORTFOLIO VALUE</span>
+              <span class="portfolio-value" id="totalValue">$0.00</span>
+            </div>
+            <div style="text-align: right;">
+              <span class="portfolio-label">EST. ANNUAL INCOME</span>
+              <span class="portfolio-value portfolio-value-projection" id="annualIncome">$0.00</span>
+            </div>
+          </div>
         </div>
 
         <!-- Estimated Income Section -->
@@ -33,17 +41,17 @@
           <div class="income-card">
             <span class="income-label">DAILY</span>
             <span class="income-value" id="dailyIncome">$0.00</span>
-            <span class="income-actual" id="dailyActual">Last 24H: +$0</span>
+            <span class="income-actual">Last 24H: <span class="income-actual-value" id="dailyActual">+$0</span></span>
+          </div>
+          <div class="income-card">
+            <span class="income-label">7 DAYS</span>
+            <span class="income-value" id="weeklyIncome">$0.00</span>
+            <span class="income-actual">Last 7D: <span class="income-actual-value" id="weeklyActual">+$0</span></span>
           </div>
           <div class="income-card">
             <span class="income-label">MONTHLY</span>
             <span class="income-value" id="monthlyIncome">$0.00</span>
-            <span class="income-actual" id="monthlyActual">Last 7D: +$0</span>
-          </div>
-          <div class="income-card">
-            <span class="income-label">YEARLY</span>
-            <span class="income-value" id="yearlyIncome">$0.00</span>
-            <span class="income-actual" id="yearlyActual">Last 30D: +$0</span>
+            <span class="income-actual">Last 30D: <span class="income-actual-value" id="monthlyActual">+$0</span></span>
           </div>
         </div>
 
@@ -207,13 +215,16 @@
       const actual7dYield = summary?.actual7dYield || 0;
       const actual30dYield = summary?.actual30dYield || 0;
 
+      const estWeeklyUsd = estDailyUsd * 7;
+
       document.getElementById('totalValue').textContent = formatCurrency(totalValueUsd);
+      document.getElementById('annualIncome').textContent = formatCurrency(estYearlyUsd);
       document.getElementById('dailyIncome').textContent = formatCurrency(estDailyUsd);
-      document.getElementById('dailyActual').textContent = `Last 24H: ${actual24hYield >= 0 ? '+' : ''}${formatCurrency(actual24hYield)}`;
+      document.getElementById('dailyActual').textContent = `${actual24hYield >= 0 ? '+' : ''}${formatCurrency(actual24hYield)}`;
+      document.getElementById('weeklyIncome').textContent = formatCurrency(estWeeklyUsd);
+      document.getElementById('weeklyActual').textContent = `${actual7dYield >= 0 ? '+' : ''}${formatCurrency(actual7dYield)}`;
       document.getElementById('monthlyIncome').textContent = formatCurrency(estMonthlyUsd);
-      document.getElementById('monthlyActual').textContent = `Last 7D: ${actual7dYield >= 0 ? '+' : ''}${formatCurrency(actual7dYield)}`;
-      document.getElementById('yearlyIncome').textContent = formatCurrency(estYearlyUsd);
-      document.getElementById('yearlyActual').textContent = `Last 30D: ${actual30dYield >= 0 ? '+' : ''}${formatCurrency(actual30dYield)}`;
+      document.getElementById('monthlyActual').textContent = `${actual30dYield >= 0 ? '+' : ''}${formatCurrency(actual30dYield)}`;
       document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
 
       // Render income context
