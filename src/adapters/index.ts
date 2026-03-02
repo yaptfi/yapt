@@ -10,6 +10,7 @@ import { InfinifiLiusd4wAdapter } from './infinifi-liusd-4w';
 import { YearnV3Adapter } from './yearn-v3';
 import { UniswapV4Adapter } from './uniswap-v4';
 import { UniswapV3WbtcUsdtArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdt-arbitrum-rewards';
+import { UniswapV3PaxgUsdcEthereumRewardsAdapter } from './uniswap-v3-paxg-usdc-ethereum-rewards';
 import { PendlePtAdapter } from './pendle-pt';
 import { ProtocolKey } from '../types';
 
@@ -44,5 +45,6 @@ export {
   YearnV3Adapter,
   UniswapV4Adapter,
   UniswapV3WbtcUsdtArbitrumRewardsAdapter,
+  UniswapV3PaxgUsdcEthereumRewardsAdapter,
   PendlePtAdapter,
 };

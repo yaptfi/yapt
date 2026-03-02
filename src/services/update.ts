@@ -256,6 +256,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
     const preserveProjectionAfterClaim = new Set([
       'convex-cvxcrv',
       'uniswap-v3-wbtc-usdt-arbitrum-rewards',
+      'uniswap-v3-paxg-usdc-ethereum-rewards',
     ]).has(protocolKey);
     const currentValue = parseFloat(latestSnapshot.value_usd);
 
