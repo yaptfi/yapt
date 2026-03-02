@@ -24,8 +24,13 @@ function formatCurrency(value) {
 
 // Format APY percentage
 function formatApy(value, apyType, position) {
+  const isRewardBased = position && position.measureMethod === 'rewards';
+  if (isRewardBased) {
+    return 'N/A';
+  }
+
   if (value === null || value === undefined) {
-    // For 7d and 30d APYs, show "Not yet" unless it's truly not applicable
+    // For APY-based positions, 7d/30d windows may not have enough history yet
     if (apyType === 'apy7d' || apyType === 'apy30d') {
       // Check if this is cvxCRV position (where APY is not applicable)
       const isCvxCrv = position && position.displayName &&

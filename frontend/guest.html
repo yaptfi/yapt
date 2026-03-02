@@ -183,9 +183,9 @@
                   <div class="position-asset">${pos.baseAsset}</div>
                 </td>
                 <td class="amount">${formatCurrency(pos.valueUsd)}</td>
-                <td class="${getApyClass(pos.apy)}">${formatApy(pos.apy)}</td>
-                <td class="${getApyClass(pos.apy7d)}">${formatApy(pos.apy7d)}</td>
-                <td class="${getApyClass(pos.apy30d)}">${formatApy(pos.apy30d)}</td>
+                <td class="${getApyClass(pos.apy)}">${formatApy(pos.apy, 'apy', pos)}</td>
+                <td class="${getApyClass(pos.apy7d)}">${formatApy(pos.apy7d, 'apy7d', pos)}</td>
+                <td class="${getApyClass(pos.apy30d)}">${formatApy(pos.apy30d, 'apy30d', pos)}</td>
                 <td class="amount">${formatCurrency(pos.estDailyUsd)}</td>
                 <td class="amount">${formatCurrency(pos.estMonthlyUsd)}</td>
                 <td>${pos.lastUpdated ? formatDate(pos.lastUpdated) : 'Never'}</td>

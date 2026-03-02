@@ -1,0 +1,253 @@
+import { ethers, Provider } from 'ethers';
+import { BaseProtocolAdapter } from './base';
+import { Position } from '../types';
+import { getAbi, getProtocolConfig, getStablePriceOverrides } from '../utils/config';
+import { formatUnits, getContract, toChecksumAddress } from '../utils/ethereum';
+
+const ARBITRUM_CHAIN_ID = 42161;
+const MAX_UINT128 = (2n ** 128n) - 1n;
+
+interface UniswapV3RewardsConfig {
+  positionManager: string;
+  currency0: string;
+  currency1: string;
+  rewardToken: string;
+  rewardDecimals: number;
+  fee?: number;
+  countingMode?: 'count' | 'partial' | 'ignore';
+  currency0Symbol?: string;
+  currency1Symbol?: string;
+  baseAsset?: string;
+}
+
+interface UniswapV3PositionInfo {
+  token0: string;
+  token1: string;
+  fee: bigint | number;
+}
+
+interface UniswapV3CollectParams {
+  tokenId: bigint;
+  recipient: string;
+  amount0Max: bigint;
+  amount1Max: bigint;
+}
+
+type UniswapV3CollectResult = [bigint, bigint] | { amount0: bigint; amount1: bigint };
+
+interface UniswapV3PositionManagerContract {
+  balanceOf(owner: string): Promise<bigint>;
+  tokenOfOwnerByIndex(owner: string, index: bigint): Promise<bigint>;
+  positions(tokenId: bigint): Promise<UniswapV3PositionInfo>;
+  collect: {
+    staticCall(
+      params: UniswapV3CollectParams,
+      overrides: { from: string }
+    ): Promise<UniswapV3CollectResult>;
+  };
+}
+
+/**
+ * Uniswap v3 WBTC/USDT (Arbitrum) rewards-only adapter.
+ *
+ * Tracks only claimable USDT fees/rewards from the NFT position and ignores LP principal.
+ */
+export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter {
+  readonly protocolKey = 'uniswap-v3-wbtc-usdt-arbitrum-rewards' as const;
+  readonly protocolName = 'Uniswap v3 WBTC/USDT (Arbitrum)';
+
+  private arbitrumProvider: Provider | null = null;
+  private warnedMissingRpc = false;
+
+  private getArbitrumProvider(): Provider | null {
+    if (this.arbitrumProvider) {
+      return this.arbitrumProvider;
+    }
+
+    const rpcUrl = process.env.ARBITRUM_RPC_URL;
+    if (!rpcUrl) {
+      if (!this.warnedMissingRpc) {
+        console.warn(`[${this.protocolName}] ARBITRUM_RPC_URL is not set. Skipping adapter.`);
+        this.warnedMissingRpc = true;
+      }
+      return null;
+    }
+
+    this.arbitrumProvider = new ethers.JsonRpcProvider(rpcUrl, ARBITRUM_CHAIN_ID);
+    return this.arbitrumProvider;
+  }
+
+  private getValidatedConfig(): UniswapV3RewardsConfig {
+    const config = getProtocolConfig()[this.protocolKey];
+    if (
+      !config ||
+      !config.positionManager ||
+      !config.currency0 ||
+      !config.currency1 ||
+      !config.rewardToken ||
+      config.rewardDecimals === undefined
+    ) {
+      throw new Error(`${this.protocolKey} config not found or incomplete`);
+    }
+
+    return {
+      positionManager: config.positionManager,
+      currency0: config.currency0,
+      currency1: config.currency1,
+      rewardToken: config.rewardToken,
+      rewardDecimals: config.rewardDecimals,
+      fee: config.fee,
+      countingMode: config.countingMode,
+      currency0Symbol: config.currency0Symbol,
+      currency1Symbol: config.currency1Symbol,
+      baseAsset: config.baseAsset,
+    };
+  }
+
+  async discover(walletAddress: string): Promise<Partial<Position>[]> {
+    const provider = this.getArbitrumProvider();
+    if (!provider) {
+      return [];
+    }
+
+    const config = this.getValidatedConfig();
+    const checksumAddress = toChecksumAddress(walletAddress);
+    const positions: Partial<Position>[] = [];
+
+    try {
+      const positionManagerAbi = getAbi('UniswapV3NonfungiblePositionManager');
+      const positionManager = getContract(
+        config.positionManager,
+        positionManagerAbi,
+        provider
+      ) as unknown as UniswapV3PositionManagerContract;
+
+      const ownedCount = BigInt(await positionManager.balanceOf(checksumAddress));
+      if (ownedCount === 0n) {
+        return positions;
+      }
+
+      const expectedToken0 = config.currency0.toLowerCase();
+      const expectedToken1 = config.currency1.toLowerCase();
+      const expectedRewardToken = config.rewardToken.toLowerCase();
+      const requiredFee = config.fee !== undefined ? BigInt(config.fee) : null;
+
+      for (let i = 0n; i < ownedCount; i++) {
+        const tokenId = BigInt(await positionManager.tokenOfOwnerByIndex(checksumAddress, i));
+        const positionInfo = await positionManager.positions(tokenId);
+
+        const token0 = (positionInfo.token0 as string).toLowerCase();
+        const token1 = (positionInfo.token1 as string).toLowerCase();
+        const fee = BigInt(positionInfo.fee);
+
+        const pairMatches =
+          (token0 === expectedToken0 && token1 === expectedToken1) ||
+          (token0 === expectedToken1 && token1 === expectedToken0);
+        if (!pairMatches) {
+          continue;
+        }
+
+        if (requiredFee !== null && fee !== requiredFee) {
+          continue;
+        }
+
+        const rewardTokenIndex = token0 === expectedRewardToken ? 0 : token1 === expectedRewardToken ? 1 : -1;
+        if (rewardTokenIndex < 0) {
+          continue;
+        }
+
+        const rewardSymbol = expectedRewardToken === expectedToken0
+          ? (config.currency0Symbol || config.baseAsset || 'USDT')
+          : expectedRewardToken === expectedToken1
+            ? (config.currency1Symbol || config.baseAsset || 'USDT')
+            : (config.baseAsset || 'USDT');
+        const tokenIdString = tokenId.toString();
+
+        positions.push({
+          protocolPositionKey: this.createPositionKey(config.positionManager, tokenIdString),
+          displayName: `${this.protocolName} #${tokenIdString}`,
+          baseAsset: rewardSymbol,
+          countingMode: config.countingMode || 'partial',
+          measureMethod: 'rewards',
+          metadata: {
+            walletAddress: checksumAddress,
+            tokenId: tokenIdString,
+            positionManager: config.positionManager,
+            rewardToken: config.rewardToken,
+            rewardDecimals: config.rewardDecimals,
+            rewardTokenIndex,
+            feeTier: fee.toString(),
+            chainId: ARBITRUM_CHAIN_ID,
+          },
+          isActive: true,
+        });
+      }
+    } catch (error) {
+      console.error(`Error discovering ${this.protocolName} positions for ${walletAddress}:`, error);
+    }
+
+    return positions;
+  }
+
+  async readCurrentValue(position: Position): Promise<number> {
+    const provider = this.getArbitrumProvider();
+    if (!provider) {
+      throw new Error(`[${this.protocolName}] ARBITRUM_RPC_URL is required to read position values`);
+    }
+
+    const {
+      walletAddress,
+      tokenId,
+      positionManager,
+      rewardDecimals,
+      rewardTokenIndex,
+    } = position.metadata;
+
+    if (
+      !walletAddress ||
+      !tokenId ||
+      !positionManager ||
+      rewardDecimals === undefined ||
+      rewardTokenIndex === undefined
+    ) {
+      throw new Error(`Invalid ${this.protocolKey} position metadata`);
+    }
+
+    const index = Number(rewardTokenIndex);
+    if (index !== 0 && index !== 1) {
+      throw new Error(`Invalid rewardTokenIndex for ${this.protocolKey}: ${rewardTokenIndex}`);
+    }
+
+    const checksumAddress = toChecksumAddress(walletAddress);
+    const positionManagerAbi = getAbi('UniswapV3NonfungiblePositionManager');
+    const contract = getContract(
+      positionManager,
+      positionManagerAbi,
+      provider
+    ) as unknown as UniswapV3PositionManagerContract;
+
+    const collectResult = await contract.collect.staticCall(
+      {
+        tokenId: BigInt(tokenId),
+        recipient: checksumAddress,
+        amount0Max: MAX_UINT128,
+        amount1Max: MAX_UINT128,
+      },
+      {
+        from: checksumAddress,
+      }
+    );
+
+    const amount0Raw = Array.isArray(collectResult) ? collectResult[0] : collectResult.amount0;
+    const amount1Raw = Array.isArray(collectResult) ? collectResult[1] : collectResult.amount1;
+    const amount0 = BigInt(amount0Raw ?? 0n);
+    const amount1 = BigInt(amount1Raw ?? 0n);
+    const rewardRaw = index === 0 ? amount0 : amount1;
+
+    const rewardAmount = parseFloat(formatUnits(rewardRaw, Number(rewardDecimals)));
+    const stablePriceOverrides = getStablePriceOverrides();
+    const rewardPriceUsd = this.getStablePrice(position.baseAsset, stablePriceOverrides);
+
+    return rewardAmount * rewardPriceUsd;
+  }
+}

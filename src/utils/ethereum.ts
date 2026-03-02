@@ -135,8 +135,8 @@ export function getRPCStatus() {
   return null;
 }
 
-export function getContract(address: string, abi: any[]): Contract {
-  return new ethers.Contract(address, abi, getProvider());
+export function getContract(address: string, abi: any[], providerOverride?: Provider): Contract {
+  return new ethers.Contract(address, abi, providerOverride || getProvider());
 }
 
 export function isValidAddress(address: string): boolean {

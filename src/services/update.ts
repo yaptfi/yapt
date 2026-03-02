@@ -250,14 +250,17 @@ export async function getPositionMetrics(positionId: string, position?: Position
     // For reward positions, calculate absolute earnings rate
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Special handling for convex-cvxcrv: exclude low-value snapshots (after reward claims)
-    // to maintain stable projected income
+    // Special handling for rewards-only protocols that can be fully claimed:
+    // exclude low-value snapshots after claims to keep projected income stable.
     const protocolKey = position?.metadata?.protocolKey as string;
-    const isConvexCvxCrv = protocolKey === 'convex-cvxcrv';
+    const preserveProjectionAfterClaim = new Set([
+      'convex-cvxcrv',
+      'uniswap-v3-wbtc-usdt-arbitrum-rewards',
+    ]).has(protocolKey);
     const currentValue = parseFloat(latestSnapshot.value_usd);
 
     let yieldHistory;
-    if (isConvexCvxCrv && currentValue < 1.0) {
+    if (preserveProjectionAfterClaim && currentValue < 1.0) {
       // After reward claim: calculate projections using only snapshots with value >= $1
       // This preserves the pre-claim income projection
       const { queryOne } = await import('../utils/db');
