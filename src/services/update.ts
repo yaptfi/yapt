@@ -231,6 +231,35 @@ export async function updateWallet(walletId: string, positions: Position[]): Pro
 }
 
 /**
+ * Compute yield-to-maturity APY for a fixed-income (Pendle PT) position.
+ *
+ * YTM = annualized return from current accrued price to $1.00 at maturity.
+ * Formula: (1.0 / currentAccruedPrice)^(365 / daysRemaining) - 1
+ */
+function computeFixedIncomeYtm(position: Position): number | null {
+  const { initialPtPrice, discoveryTime, maturityDate } = position.metadata;
+  if (!initialPtPrice || !discoveryTime || !maturityDate) return null;
+
+  const now = Date.now();
+  const maturity = new Date(maturityDate).getTime();
+  if (now >= maturity) return 0;
+
+  const discovery = new Date(discoveryTime).getTime();
+  const totalDuration = maturity - discovery;
+  const elapsed = now - discovery;
+  const progress = elapsed > 0 ? Math.min(elapsed / totalDuration, 1.0) : 0;
+
+  const currentAccruedPrice = initialPtPrice + (1.0 - initialPtPrice) * progress;
+  if (currentAccruedPrice >= 1.0) return 0;
+
+  const daysRemaining = (maturity - now) / (1000 * 60 * 60 * 24);
+  if (daysRemaining <= 0) return 0;
+
+  const totalReturn = (1.0 - currentAccruedPrice) / currentAccruedPrice;
+  return Math.pow(1 + totalReturn, 365 / daysRemaining) - 1;
+}
+
+/**
  * Get current metrics for a position including windowed APYs
  * For reward-based positions, also includes absolute yield metrics
  */
@@ -361,7 +390,17 @@ export async function getPositionMetrics(positionId: string, position?: Position
   let apy7d = null;
   let apy30d = null;
 
-  if (!isRewardBased) {
+  const isFixedIncome = position?.measureMethod === 'fixed-income';
+
+  if (isFixedIncome && position) {
+    // For fixed-maturity instruments (e.g. Pendle PT), yield-to-maturity is the correct metric.
+    // It is deterministic, always positive before maturity, and unaffected by snapshot history.
+    // All three windows return the same value — the guaranteed annualized return to maturity.
+    const ytm = computeFixedIncomeYtm(position);
+    apy = ytm;
+    apy7d = ytm;
+    apy30d = ytm;
+  } else if (!isRewardBased) {
     // Two‑point APYs: 4h ("recent"), 7d, 30d — each compares latest vs nearest snapshot to target
     const result4h = await computeApyBetween(latestSnapshot, 4 * 60 * 60 * 1000, 59);
     const result7d = await computeApyBetween(latestSnapshot, 7 * 24 * 60 * 60 * 1000, 59);
