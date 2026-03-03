@@ -2,6 +2,7 @@ import { queryOne } from '../utils/db';
 import { Position } from '../types';
 import { getPositionMetrics } from './update';
 import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
+import { getPositionCategory, PositionCategory } from '../utils/position-category';
 
 export interface PositionLike {
   id: string;
@@ -20,6 +21,7 @@ export interface EnrichedPositionView {
   baseAsset: string;
   countingMode: string;
   measureMethod: string;
+  positionType: PositionCategory;
   valueUsd: number;
   apy?: number | null;
   apy7d?: number | null;
@@ -53,6 +55,9 @@ export async function enrichPositionsWithMetrics(
     positions.map(async (position): Promise<EnrichedPositionView> => {
       const metrics = await getPositionMetrics(position.id, position as unknown as Position);
 
+      const category = getPositionCategory(position.measureMethod);
+      const isRewardBased = category === 'rewards';
+
       if (!metrics) {
         return {
           id: position.id,
@@ -61,6 +66,7 @@ export async function enrichPositionsWithMetrics(
           baseAsset: position.baseAsset,
           countingMode: position.countingMode,
           measureMethod: position.measureMethod,
+          positionType: category,
           valueUsd: 0,
           apy: null,
           apy7d: null,
@@ -71,8 +77,6 @@ export async function enrichPositionsWithMetrics(
           lastUpdated: null,
         };
       }
-
-      const isRewardBased = position.measureMethod === 'rewards';
       let estDailyUsd: number;
       let estMonthlyUsd: number;
       let estYearlyUsd: number;
@@ -95,6 +99,7 @@ export async function enrichPositionsWithMetrics(
         baseAsset: position.baseAsset,
         countingMode: position.countingMode,
         measureMethod: position.measureMethod,
+        positionType: category,
         valueUsd: metrics.valueUsd,
         ...(!isRewardBased && {
           apy: metrics.apy,

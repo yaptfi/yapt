@@ -4,6 +4,7 @@ import { getLatestSnapshot, createSnapshot, getTotalYieldSince, getSnapshotNearT
 import { computeApy } from '../utils/apy';
 import { archivePosition } from '../models/position';
 import { sleep } from '../utils/async';
+import { getPositionCategory } from '../utils/position-category';
 import {
   UPDATE_SLEEP_MS,
   APY_MIN_WINDOW_MINUTES,
@@ -76,7 +77,7 @@ export async function updatePosition(position: Position): Promise<void> {
     // CASE 1: Complete Exit Detection (value < $10 threshold)
     if (currentValue < 10 && latestSnapshot) {
       // Reward positions: zero value is normal (rewards claimed)
-      if (position.measureMethod === 'rewards') {
+      if (getPositionCategory(position.measureMethod) === 'rewards') {
         console.log(`  Reward position at $${currentValue.toFixed(2)} (rewards claimed) - creating normal snapshot`);
         await createSnapshot(position.id, new Date(), currentValue, 0, 0, null);
         return;
@@ -98,7 +99,7 @@ export async function updatePosition(position: Position): Promise<void> {
     }
 
     // CASE 3: Reward positions – record yield-only snapshot with APY disabled
-    if (position.measureMethod === 'rewards') {
+    if (getPositionCategory(position.measureMethod) === 'rewards') {
       const latestValue = parseFloat(latestSnapshot.value_usd);
       const yieldDeltaUsd = currentValue - latestValue;
 
@@ -123,7 +124,7 @@ export async function updatePosition(position: Position): Promise<void> {
     const valueChange = currentValue - previousValue;
     const relativeChange = Math.abs(valueChange) / Math.max(previousValue, 1);
 
-    if (position.measureMethod !== 'fixed-income' && relativeChange > 0.001) {
+    if (getPositionCategory(position.measureMethod) !== 'fixed-income' && relativeChange > 0.001) {
       const changeType = valueChange > 0 ? 'addition' : 'exit';
       console.log(
         `  Significant ${changeType} detected: ` +
@@ -271,7 +272,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
   }
 
   // Check if this is a reward-based position (volatile principal, stable yield)
-  const isRewardBased = position?.measureMethod === 'rewards';
+  const isRewardBased = getPositionCategory(position?.measureMethod ?? '') === 'rewards';
 
   let absoluteYieldMetrics = null;
 
@@ -390,7 +391,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
   let apy7d = null;
   let apy30d = null;
 
-  const isFixedIncome = position?.measureMethod === 'fixed-income';
+  const isFixedIncome = getPositionCategory(position?.measureMethod ?? '') === 'fixed-income';
 
   if (isFixedIncome && position) {
     // For fixed-maturity instruments (e.g. Pendle PT), yield-to-maturity is the correct metric.

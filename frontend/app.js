@@ -470,6 +470,7 @@ async function loadPositions() {
               <td>
                 <div class="position-name">${pos.displayName}</div>
                 <div class="position-asset">${pos.baseAsset}</div>
+                ${getPositionTypeBadge(pos.positionType)}
               </td>
               <td class="amount">${formatCurrency(pos.valueUsd)}</td>
               <td class="${getApyClass(pos.apy)}">${formatApy(pos.apy, 'apy', pos)}</td>

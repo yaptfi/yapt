@@ -68,6 +68,21 @@ Docker note:
 - Use migrations for schema changes; keep them reversible and safe.
 - UUIDs are based on `uuid-ossp`; use `uuid_generate_v4()` unless you explicitly enable `pgcrypto`.
 
+## Position Categories
+
+Positions have three semantic categories, derived at the service layer from the DB-persisted `measureMethod`:
+
+| Category | measureMethod values | Behavior |
+|---|---|---|
+| `savings` | `balance`, `exchangeRate`, `rebaseIndex`, `subgraph`, `lp-position` | 2-point windowed APY; APY-based income projections; <$10 = exit |
+| `fixed-income` | `fixed-income` | YTM APY (same for all windows); value-change detection skipped; income from YTM |
+| `rewards` | `rewards` | No APY; absolute yield metrics; <$10 = normal post-claim |
+
+- `measureMethod` is the value stored in DB and set by adapters. Do not change it.
+- `positionType` (`PositionCategory`) is derived by `getPositionCategory()` in `src/utils/position-category.ts` and exposed in API responses.
+- **Rule**: use `getPositionCategory()` in all service/route code. Do not add raw `measureMethod` string comparisons outside of adapters/migrations.
+- The `default` case in `getPositionCategory()` maps to `'savings'` — forward-compatible with new savings-style protocols.
+
 ## Scheduler and Update Behavior
 - Queue: `position-updates` (`src/jobs/scheduler.ts`).
 - Worker concurrency is intentionally `1` (sequential wallet processing).

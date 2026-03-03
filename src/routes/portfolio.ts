@@ -5,6 +5,7 @@ import { getPositionMetrics } from '../services/update';
 import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
 import { query } from '../utils/db';
 import { requireAuth } from '../middleware/auth';
+import { getPositionCategory } from '../utils/position-category';
 
 export default async function portfolioRoutes(server: FastifyInstance) {
   /**
@@ -52,7 +53,7 @@ export default async function portfolioRoutes(server: FastifyInstance) {
 
             // For reward-based positions, use absolute yield metrics
             // For APY-based positions, use percentage-based income projections
-            const isRewardBased = pos.measureMethod === 'rewards';
+            const isRewardBased = getPositionCategory(pos.measureMethod) === 'rewards';
             let estDaily, estMonthly, estYearly;
 
             if (isRewardBased && metrics.absoluteYield) {

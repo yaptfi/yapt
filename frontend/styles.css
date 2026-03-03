@@ -1247,6 +1247,21 @@ header {
   color: var(--warning);
 }
 
+/* Position type badges */
+.pos-type-badge {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+.pos-type-badge--savings      { background: rgba(99,102,241,0.12); color: rgba(148,151,245,0.9); }
+.pos-type-badge--fixed-income { background: rgba(245,158,11,0.12); color: rgba(251,191,36,0.9); }
+.pos-type-badge--rewards      { background: rgba(16,185,129,0.12); color: rgba(52,211,153,0.9); }
+
 .severity {
   display: inline-block;
   padding: 0.25rem 0.5rem;

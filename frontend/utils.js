@@ -24,7 +24,7 @@ function formatCurrency(value) {
 
 // Format APY percentage
 function formatApy(value, apyType, position) {
-  const isRewardBased = position && position.measureMethod === 'rewards';
+  const isRewardBased = position && position.positionType === 'rewards';
   if (isRewardBased) {
     return 'N/A';
   }
@@ -41,6 +41,19 @@ function formatApy(value, apyType, position) {
     return 'N/A';
   }
   return `${(value * 100).toFixed(2)}%`;
+}
+
+// Get HTML badge for position type
+function getPositionTypeBadge(positionType) {
+  switch (positionType) {
+    case 'fixed-income':
+      return '<span class="pos-type-badge pos-type-badge--fixed-income">Fixed Income</span>';
+    case 'rewards':
+      return '<span class="pos-type-badge pos-type-badge--rewards">Rewards</span>';
+    case 'savings':
+    default:
+      return '<span class="pos-type-badge pos-type-badge--savings">Savings</span>';
+  }
 }
 
 // Get CSS class for APY value
