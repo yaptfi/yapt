@@ -154,8 +154,9 @@ export interface ProtocolConfig {
     underlyingToken?: string;
     baseAsset?: string;
     countingMode?: CountingMode;
-    // Uniswap v4 LP position fields
+    // Uniswap v3/v4 LP position fields
     positionManager?: string;
+    poolAddress?: string;
     poolManager?: string;
     stateView?: string;
     currency0?: string;

@@ -313,6 +313,20 @@
     "countingMode": "count",
     "abiKeys": ["ERC20", "AaveUmbrellaStakeToken", "AaveRewardsController", "ERC4626"]
   },
+  "uniswap-v3-usdt-usdc-arbitrum": {
+    "name": "Uniswap v3 USDT/USDC (Arbitrum)",
+    "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+    "poolAddress": "0x9957ab69651EfE39b17c778e1435258F6A2cd314",
+    "currency0": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "currency1": "0xFd086bC7CD5C481DCC9C85ebe478A1C0b69FCbb9",
+    "currency0Symbol": "USDC",
+    "currency1Symbol": "USDT",
+    "currency0Decimals": 6,
+    "currency1Decimals": 6,
+    "type": "lp-position",
+    "countingMode": "count",
+    "abiKeys": ["UniswapV3NonfungiblePositionManager", "UniswapV3Pool"]
+  },
   "pendle-pt-reusde-jun25": {
     "name": "Pendle PT reUSDe (Jun 2026)",
     "ptToken": "0xdc9a5a2e3ce7ac881fc3b28c629c05d1617d1c56",
