@@ -147,6 +147,58 @@ describe('UniswapV3PaxgUsdcEthereumRewardsAdapter', () => {
     );
   });
 
+  it('does not mark position as closed when liquidity is still present', async () => {
+    const collectStaticCall = jest.fn();
+    const manager = {
+      ownerOf: jest.fn().mockResolvedValue('0xabc0000000000000000000000000000000000000'),
+      positions: jest.fn().mockResolvedValue({ liquidity: 1n }),
+      collect: {
+        staticCall: collectStaticCall,
+      },
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3PaxgUsdcEthereumRewardsAdapter();
+    const isClosed = await adapter.isPositionClosed(POSITION);
+
+    expect(isClosed).toBe(false);
+    expect(collectStaticCall).not.toHaveBeenCalled();
+  });
+
+  it('marks position as closed when liquidity and claimable fees are zero', async () => {
+    const collectStaticCall = jest.fn().mockResolvedValue([0n, 0n]);
+    const manager = {
+      ownerOf: jest.fn().mockResolvedValue('0xabc0000000000000000000000000000000000000'),
+      positions: jest.fn().mockResolvedValue({ liquidity: 0n, tokensOwed0: 0n, tokensOwed1: 0n }),
+      collect: {
+        staticCall: collectStaticCall,
+      },
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3PaxgUsdcEthereumRewardsAdapter();
+    const isClosed = await adapter.isPositionClosed(POSITION);
+
+    expect(isClosed).toBe(true);
+  });
+
+  it('marks position as closed when the NFT token no longer exists', async () => {
+    const manager = {
+      ownerOf: jest.fn().mockRejectedValue(new Error('ERC721: invalid token ID')),
+      positions: jest.fn(),
+      collect: {
+        staticCall: jest.fn(),
+      },
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3PaxgUsdcEthereumRewardsAdapter();
+    const isClosed = await adapter.isPositionClosed(POSITION);
+
+    expect(isClosed).toBe(true);
+    expect(manager.positions).not.toHaveBeenCalled();
+  });
+
   it('throws when ETH_RPC_URL is missing during value reads', async () => {
     delete process.env.ETH_RPC_URL;
 

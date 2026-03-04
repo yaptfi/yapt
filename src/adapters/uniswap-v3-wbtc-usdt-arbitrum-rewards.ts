@@ -24,6 +24,9 @@ interface UniswapV3PositionInfo {
   token0: string;
   token1: string;
   fee: bigint | number;
+  liquidity?: bigint | number;
+  tokensOwed0?: bigint | number;
+  tokensOwed1?: bigint | number;
 }
 
 interface UniswapV3CollectParams {
@@ -37,6 +40,7 @@ type UniswapV3CollectResult = [bigint, bigint] | { amount0: bigint; amount1: big
 
 interface UniswapV3PositionManagerContract {
   balanceOf(owner: string): Promise<bigint>;
+  ownerOf(tokenId: bigint): Promise<string>;
   tokenOfOwnerByIndex(owner: string, index: bigint): Promise<bigint>;
   positions(tokenId: bigint): Promise<UniswapV3PositionInfo>;
   collect: {
@@ -249,5 +253,64 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
     const rewardPriceUsd = this.getStablePrice(position.baseAsset, stablePriceOverrides);
 
     return rewardAmount * rewardPriceUsd;
+  }
+
+  async isPositionClosed(position: Position): Promise<boolean> {
+    const provider = this.getArbitrumProvider();
+    if (!provider) {
+      throw new Error(`[${this.protocolName}] ARBITRUM_RPC_URL is required to verify position closure`);
+    }
+
+    const { walletAddress, tokenId, positionManager } = position.metadata;
+    if (!walletAddress || !tokenId || !positionManager) {
+      throw new Error(`Invalid ${this.protocolKey} position metadata for closure detection`);
+    }
+
+    const checksumAddress = toChecksumAddress(walletAddress);
+    const tokenIdBigInt = BigInt(tokenId);
+    const positionManagerAbi = getAbi('UniswapV3NonfungiblePositionManager');
+    const contract = getContract(
+      positionManager,
+      positionManagerAbi,
+      provider
+    ) as unknown as UniswapV3PositionManagerContract;
+
+    // Burned/non-existent NFT -> terminally closed.
+    let owner: string;
+    try {
+      owner = await contract.ownerOf(tokenIdBigInt);
+    } catch {
+      return true;
+    }
+
+    // Moved to another wallet -> treat as closed for this tracked wallet.
+    if (owner.toLowerCase() !== checksumAddress.toLowerCase()) {
+      return true;
+    }
+
+    const positionInfo = await contract.positions(tokenIdBigInt);
+    const liquidity = BigInt(positionInfo.liquidity ?? 0n);
+    if (liquidity > 0n) {
+      return false;
+    }
+
+    const collectResult = await contract.collect.staticCall(
+      {
+        tokenId: tokenIdBigInt,
+        recipient: checksumAddress,
+        amount0Max: MAX_UINT128,
+        amount1Max: MAX_UINT128,
+      },
+      { from: checksumAddress }
+    );
+
+    const amount0Raw = Array.isArray(collectResult) ? collectResult[0] : collectResult.amount0;
+    const amount1Raw = Array.isArray(collectResult) ? collectResult[1] : collectResult.amount1;
+    const amount0 = BigInt(amount0Raw ?? 0n);
+    const amount1 = BigInt(amount1Raw ?? 0n);
+    const owed0 = BigInt(positionInfo.tokensOwed0 ?? 0n);
+    const owed1 = BigInt(positionInfo.tokensOwed1 ?? 0n);
+
+    return amount0 === 0n && amount1 === 0n && owed0 === 0n && owed1 === 0n;
   }
 }

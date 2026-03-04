@@ -32,6 +32,17 @@ export interface IProtocolAdapter {
   readCurrentValue(position: Position): Promise<number>;
 
   /**
+   * Optional: determine whether a position is terminally closed and should be archived.
+   *
+   * This is used for rewards-style positions where a zero value may be either:
+   * - normal (rewards were claimed, position still open), or
+   * - terminal (position fully closed/burned/transferred away).
+   *
+   * Implementations should be conservative: return true only when closure is confirmed.
+   */
+  isPositionClosed?(position: Position): Promise<boolean>;
+
+  /**
    * Calculate net flows (deposits/withdrawals) for a position
    * within a specific block range
    *
@@ -59,6 +70,13 @@ export abstract class BaseProtocolAdapter implements IProtocolAdapter {
 
   abstract discover(walletAddress: string): Promise<Partial<Position>[]>;
   abstract readCurrentValue(position: Position): Promise<number>;
+
+  /**
+   * Optional: terminal-close signal (defaults to false / unknown).
+   */
+  async isPositionClosed(_position: Position): Promise<boolean> {
+    return false;
+  }
 
   /**
    * Optional: Calculate net flows (deprecated - returns 0 by default)
@@ -93,4 +111,3 @@ export abstract class BaseProtocolAdapter implements IProtocolAdapter {
     return priceOverrides[asset] || 1.0;
   }
 }
-

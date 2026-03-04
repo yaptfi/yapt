@@ -64,8 +64,34 @@ export async function updatePosition(position: Position): Promise<void> {
   console.log(`Updating position ${position.id} (${position.displayName}) with protocol ${protocolKey}`);
 
   const adapter = getAdapter(protocolKey as ProtocolKey);
+  const positionCategory = getPositionCategory(position.measureMethod);
   // Capture a reference time for calculations; we'll stamp the snapshot with the actual write time
   const calcStartTime = new Date();
+
+  const maybeArchiveClosedRewardPosition = async (currentValue: number | null): Promise<boolean> => {
+    if (positionCategory !== 'rewards' || typeof adapter.isPositionClosed !== 'function') {
+      return false;
+    }
+
+    // Keep this check lightweight: only probe closure when value is near-zero
+    // (or value fetch failed and we have no value at all).
+    if (currentValue !== null && currentValue >= 1.0) {
+      return false;
+    }
+
+    try {
+      const isClosed = await adapter.isPositionClosed(position);
+      if (isClosed) {
+        console.log(`  Reward position is terminally closed - archiving position`);
+        await archivePosition(position.id, 'complete_exit');
+        return true;
+      }
+    } catch (closeCheckError) {
+      console.warn(`  Failed to verify reward position closure for ${position.id}:`, closeCheckError);
+    }
+
+    return false;
+  };
 
   try {
     // Get current value
@@ -74,10 +100,16 @@ export async function updatePosition(position: Position): Promise<void> {
     // Get latest snapshot (for recent net flow detection)
     const latestSnapshot = await getLatestSnapshot(position.id);
 
+    // Rewards positions can be legitimately $0 after claim.
+    // Archive only if adapter confirms the position is truly closed.
+    if (await maybeArchiveClosedRewardPosition(currentValue)) {
+      return;
+    }
+
     // CASE 1: Complete Exit Detection (value < $10 threshold)
     if (currentValue < 10 && latestSnapshot) {
       // Reward positions: zero value is normal (rewards claimed)
-      if (getPositionCategory(position.measureMethod) === 'rewards') {
+      if (positionCategory === 'rewards') {
         console.log(`  Reward position at $${currentValue.toFixed(2)} (rewards claimed) - creating normal snapshot`);
         await createSnapshot(position.id, new Date(), currentValue, 0, 0, null);
         return;
@@ -99,7 +131,7 @@ export async function updatePosition(position: Position): Promise<void> {
     }
 
     // CASE 3: Reward positions – record yield-only snapshot with APY disabled
-    if (getPositionCategory(position.measureMethod) === 'rewards') {
+    if (positionCategory === 'rewards') {
       const latestValue = parseFloat(latestSnapshot.value_usd);
       const yieldDeltaUsd = currentValue - latestValue;
 
@@ -124,7 +156,7 @@ export async function updatePosition(position: Position): Promise<void> {
     const valueChange = currentValue - previousValue;
     const relativeChange = Math.abs(valueChange) / Math.max(previousValue, 1);
 
-    if (getPositionCategory(position.measureMethod) !== 'fixed-income' && relativeChange > 0.001) {
+    if (positionCategory !== 'fixed-income' && relativeChange > 0.001) {
       const changeType = valueChange > 0 ? 'addition' : 'exit';
       console.log(
         `  Significant ${changeType} detected: ` +
@@ -203,6 +235,11 @@ export async function updatePosition(position: Position): Promise<void> {
 
     console.log(`Updated position ${position.id} (${position.displayName}): $${currentValue.toFixed(2)}, APY: ${apy ? (apy * 100).toFixed(2) + '%' : 'N/A'}`);
   } catch (error) {
+    // If value read fails for a rewards position (e.g., burned NFT),
+    // attempt terminal-close detection before giving up.
+    if (await maybeArchiveClosedRewardPosition(null)) {
+      return;
+    }
     console.error(`Failed to update position ${position.id}:`, error);
   }
 }
