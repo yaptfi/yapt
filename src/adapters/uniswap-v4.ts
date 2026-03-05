@@ -3,6 +3,7 @@ import { Position } from '../types';
 import { getContract, toChecksumAddress, formatUnits } from '../utils/ethereum';
 import { getProtocolConfig, getAbi } from '../utils/config';
 import { ethers } from 'ethers';
+import { getWalletUniswapV4Inventory } from '../utils/uniswap-v4-inventory';
 
 /**
  * Uniswap V4 LP Position Adapter
@@ -23,10 +24,9 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
   private readonly Q128 = 2n ** 128n; // Used in fee calculations
 
   /**
-   * Discover Uniswap v4 positions by scanning NFT Transfer events
-   * Since v4 Position Manager doesn't implement ERC721Enumerable,
-   * we must query Transfer events to find owned NFTs
-   *
+   * Discover Uniswap v4 positions by scanning NFT Transfer events.
+   * Uses shared inventory cache — multiple v4 adapters share one eth_getLogs
+   * round-trip per wallet per TTL.
    * REQUIRES: RPC provider with supportsLargeBlockScans=true
    */
   async discover(walletAddress: string): Promise<Partial<Position>[]> {
@@ -38,134 +38,73 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
     const checksumAddress = toChecksumAddress(walletAddress);
     const positions: Partial<Position>[] = [];
 
-    // Get scan-capable provider for historical event queries
     const { getProvider } = await import('../utils/ethereum');
     const proxyProvider = getProvider();
 
-    // Check if provider supports block scans
     let scanProvider;
     if ('getRPCManager' in proxyProvider && typeof proxyProvider.getRPCManager === 'function') {
       const manager = (proxyProvider as any).getRPCManager();
       scanProvider = manager.getScanCapableProvider();
-
       if (!scanProvider) {
         console.warn('[Uniswap v4] No scan-capable RPC provider available - skipping Uniswap discovery');
         console.warn('[Uniswap v4] Configure an RPC provider with supportsLargeBlockScans=true (e.g., Infura)');
         return [];
       }
     } else {
-      // Fallback to regular provider (single provider setup)
       scanProvider = proxyProvider;
     }
-
-    // Get Position Manager contract with scan-capable provider
-    const positionManagerAbi = getAbi('UniswapV4PositionManager');
-    const positionManager = new ethers.Contract(
-      config.positionManager,
-      positionManagerAbi,
-      scanProvider
-    );
 
     const fromBlock = config.deployBlock ?? 21688823;
 
     try {
-      // Query all Transfer events where wallet is the recipient
-      const transferFilter = positionManager.filters.Transfer(null, checksumAddress);
-      const receivedEvents = await positionManager.queryFilter(transferFilter, fromBlock);
+      const inventory = await getWalletUniswapV4Inventory(
+        checksumAddress,
+        config.positionManager!,
+        fromBlock,
+        scanProvider
+      );
 
-      // Query all Transfer events where wallet is the sender (to filter out transferred positions)
-      const sentFilter = positionManager.filters.Transfer(checksumAddress, null);
-      const sentEvents = await positionManager.queryFilter(sentFilter, fromBlock);
+      const expectedCurrency0 = config.currency0!.toLowerCase();
+      const expectedCurrency1 = config.currency1!.toLowerCase();
+      const configFee = BigInt(config.fee!);
 
-      // Build set of tokenIds that were sent away
-      const sentTokenIds = new Set(sentEvents.map((event: any) => event.args.tokenId.toString()));
-
-      // Process each received NFT
-      for (const event of receivedEvents as any[]) {
-        const tokenId = event.args.tokenId.toString();
-
-        // Skip if this NFT was subsequently transferred away
-        if (sentTokenIds.has(tokenId)) {
-          continue;
-        }
-
-        // Verify current ownership (belt-and-suspenders check)
-        try {
-          const currentOwner = await positionManager.ownerOf(tokenId);
-          if (currentOwner.toLowerCase() !== checksumAddress.toLowerCase()) {
-            continue;
-          }
-        } catch {
-          // NFT may have been burned or doesn't exist
-          continue;
-        }
-
-        // Get position details
-        const [poolKey, positionInfo] = await positionManager.getPoolAndPositionInfo(tokenId);
-
-        // Check if this is the USDC/USDT pool we're tracking
-        const currency0Lower = poolKey.currency0.toLowerCase();
-        const currency1Lower = poolKey.currency1.toLowerCase();
-        const expectedCurrency0 = config.currency0!.toLowerCase();
-        const expectedCurrency1 = config.currency1!.toLowerCase();
-
-        // Convert both to BigInt for comparison (poolKey.fee is already BigInt)
-        const poolFee = BigInt(poolKey.fee);
-        const configFee = BigInt(config.fee!);
-        const feeMatches = poolFee === configFee;
+      for (const entry of inventory) {
+        const currency0Lower = entry.poolKey.currency0.toLowerCase();
+        const currency1Lower = entry.poolKey.currency1.toLowerCase();
 
         const isTargetPool =
           currency0Lower === expectedCurrency0 &&
           currency1Lower === expectedCurrency1 &&
-          feeMatches;
+          entry.poolKey.fee === configFee;
 
         if (!isTargetPool) {
           continue;
         }
 
-        // Decode packed PositionInfo (200 bits poolId | 24 bits tickUpper | 24 bits tickLower | 8 bits hasSubscriber)
-        const info = BigInt(positionInfo);
-        const tickLowerUint = Number((info >> 8n) & 0xFFFFFFn);
-        const tickUpperUint = Number((info >> 32n) & 0xFFFFFFn);
-
-        // Convert from uint24 to int24 (two's complement)
-        const tickLower = tickLowerUint >= (1 << 23) ? tickLowerUint - (1 << 24) : tickLowerUint;
-        const tickUpper = tickUpperUint >= (1 << 23) ? tickUpperUint - (1 << 24) : tickUpperUint;
-
-        // Calculate poolId from PoolKey
-        const poolId = ethers.keccak256(
-          ethers.AbiCoder.defaultAbiCoder().encode(
-            ['address', 'address', 'uint24', 'int24', 'address'],
-            [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
-          )
-        );
-
-        // Create position
-        const positionKey = this.createPositionKey(config.positionManager!, tokenId);
+        const positionKey = this.createPositionKey(config.positionManager!, entry.tokenId);
         positions.push({
           protocolPositionKey: positionKey,
-          displayName: `Uniswap v4 ${config.currency0Symbol || 'USDC'}/${config.currency1Symbol || 'USDT'} #${tokenId}`,
-          baseAsset: config.currency0Symbol || 'USDC', // Use currency0 as base for display purposes
-          countingMode: 'count', // Both assets are stablecoins at ~$1
-          measureMethod: 'balance', // Using balance-based measurement
+          displayName: `Uniswap v4 ${config.currency0Symbol || 'USDC'}/${config.currency1Symbol || 'USDT'} #${entry.tokenId}`,
+          baseAsset: config.currency0Symbol || 'USDC',
+          countingMode: 'count',
+          measureMethod: 'balance',
           metadata: {
             walletAddress: checksumAddress,
-            tokenId,
+            tokenId: entry.tokenId,
             positionManager: config.positionManager,
             stateView: config.stateView,
-            poolId,
-            tickLower,
-            tickUpper,
-            currency0: poolKey.currency0,
-            currency1: poolKey.currency1,
+            poolId: entry.poolId,
+            tickLower: entry.tickLower,
+            tickUpper: entry.tickUpper,
+            currency0: entry.poolKey.currency0,
+            currency1: entry.poolKey.currency1,
             currency0Symbol: config.currency0Symbol,
             currency1Symbol: config.currency1Symbol,
             currency0Decimals: config.currency0Decimals,
             currency1Decimals: config.currency1Decimals,
-            // Convert BigInt values to strings for JSON serialization
-            fee: poolKey.fee.toString(),
-            tickSpacing: poolKey.tickSpacing.toString(),
-            hooks: poolKey.hooks,
+            fee: entry.poolKey.fee.toString(),
+            tickSpacing: entry.poolKey.tickSpacing.toString(),
+            hooks: entry.poolKey.hooks,
           },
           isActive: true,
         });

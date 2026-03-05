@@ -1,8 +1,9 @@
+import { ethers } from 'ethers';
 import { BaseProtocolAdapter } from './base';
 import { Position } from '../types';
 import { getContract, toChecksumAddress, formatUnits } from '../utils/ethereum';
 import { getProtocolConfig, getAbi, getStablePriceOverrides } from '../utils/config';
-import { ethers } from 'ethers';
+import { getWalletUniswapV4Inventory } from '../utils/uniswap-v4-inventory';
 
 const PROTOCOL_KEY = 'uniswap-v4-wbtc-usdc-rewards';
 const PROTOCOL_NAME = 'Uniswap v4 WBTC/USDC';
@@ -14,6 +15,9 @@ const Q128 = 2n ** 128n;
  * Discovers WBTC/USDC v4 positions and tracks only claimable USDC fees.
  * Principal (WBTC/USDC liquidity) is excluded — same pattern as the
  * Uniswap v3 WBTC/USDT Arbitrum rewards adapter.
+ *
+ * Uses the shared v4 inventory utility so multiple v4 adapters share a
+ * single eth_getLogs round-trip per wallet per TTL.
  */
 export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
   readonly protocolKey = 'uniswap-v4-wbtc-usdc-rewards' as const;
@@ -40,7 +44,9 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
   }
 
   /**
-   * Discover Uniswap v4 WBTC/USDC positions by scanning NFT Transfer events.
+   * Discover Uniswap v4 WBTC/USDC positions.
+   * Uses shared inventory cache — does not issue duplicate eth_getLogs when
+   * multiple v4 adapters discover for the same wallet.
    * REQUIRES: RPC provider with supportsLargeBlockScans=true
    */
   async discover(walletAddress: string): Promise<Partial<Position>[]> {
@@ -57,53 +63,30 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
       scanProvider = manager.getScanCapableProvider();
       if (!scanProvider) {
         console.warn(`[${PROTOCOL_NAME}] No scan-capable RPC provider available - skipping discovery`);
-        console.warn(`[${PROTOCOL_NAME}] Configure an RPC provider with supportsLargeBlockScans=true`);
         return [];
       }
     } else {
       scanProvider = proxyProvider;
     }
 
-    const positionManagerAbi = getAbi('UniswapV4PositionManager');
-    const positionManager = new ethers.Contract(
-      config.positionManager,
-      positionManagerAbi,
-      scanProvider
-    );
-
     const fromBlock = config.deployBlock ?? 21688823;
 
     try {
-      const transferFilter = positionManager.filters.Transfer(null, checksumAddress);
-      const receivedEvents = await positionManager.queryFilter(transferFilter, fromBlock);
+      const inventory = await getWalletUniswapV4Inventory(
+        checksumAddress,
+        config.positionManager,
+        fromBlock,
+        scanProvider
+      );
 
-      const sentFilter = positionManager.filters.Transfer(checksumAddress, null);
-      const sentEvents = await positionManager.queryFilter(sentFilter, fromBlock);
+      const expectedCurrency0 = config.currency0.toLowerCase();
+      const expectedCurrency1 = config.currency1.toLowerCase();
+      const rewardTokenAddress = config.rewardToken?.toLowerCase() ?? expectedCurrency1;
+      const configFee = config.fee !== undefined ? BigInt(config.fee) : null;
 
-      const sentTokenIds = new Set(sentEvents.map((event: any) => event.args.tokenId.toString()));
-
-      for (const event of receivedEvents as any[]) {
-        const tokenId = event.args.tokenId.toString();
-
-        if (sentTokenIds.has(tokenId)) {
-          continue;
-        }
-
-        try {
-          const currentOwner = await positionManager.ownerOf(tokenId);
-          if (currentOwner.toLowerCase() !== checksumAddress.toLowerCase()) {
-            continue;
-          }
-        } catch {
-          continue;
-        }
-
-        const [poolKey, positionInfo] = await positionManager.getPoolAndPositionInfo(tokenId);
-
-        const currency0Lower = poolKey.currency0.toLowerCase();
-        const currency1Lower = poolKey.currency1.toLowerCase();
-        const expectedCurrency0 = config.currency0!.toLowerCase();
-        const expectedCurrency1 = config.currency1!.toLowerCase();
+      for (const entry of inventory) {
+        const currency0Lower = entry.poolKey.currency0.toLowerCase();
+        const currency1Lower = entry.poolKey.currency1.toLowerCase();
 
         const pairMatches =
           (currency0Lower === expectedCurrency0 && currency1Lower === expectedCurrency1) ||
@@ -113,54 +96,34 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
           continue;
         }
 
-        if (config.fee !== undefined) {
-          const poolFee = BigInt(poolKey.fee);
-          const configFee = BigInt(config.fee);
-          if (poolFee !== configFee) {
-            continue;
-          }
+        if (configFee !== null && entry.poolKey.fee !== configFee) {
+          continue;
         }
 
-        // Decode packed PositionInfo (200 bits poolId | 24 bits tickUpper | 24 bits tickLower | 8 bits hasSubscriber)
-        const info = BigInt(positionInfo);
-        const tickLowerUint = Number((info >> 8n) & 0xFFFFFFn);
-        const tickUpperUint = Number((info >> 32n) & 0xFFFFFFn);
-        const tickLower = tickLowerUint >= (1 << 23) ? tickLowerUint - (1 << 24) : tickLowerUint;
-        const tickUpper = tickUpperUint >= (1 << 23) ? tickUpperUint - (1 << 24) : tickUpperUint;
-
-        const poolId = ethers.keccak256(
-          ethers.AbiCoder.defaultAbiCoder().encode(
-            ['address', 'address', 'uint24', 'int24', 'address'],
-            [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks]
-          )
-        );
-
-        // Determine which index is USDC (the reward token)
-        const rewardTokenAddress = config.rewardToken?.toLowerCase() ?? config.currency1!.toLowerCase();
         const rewardTokenIndex = currency0Lower === rewardTokenAddress ? 0 : 1;
         const rewardDecimals = rewardTokenIndex === 0 ? (config.currency0Decimals ?? 6) : (config.currency1Decimals ?? 6);
 
         positions.push({
-          protocolPositionKey: this.createPositionKey(config.positionManager!, tokenId),
-          displayName: `${PROTOCOL_NAME} #${tokenId}`,
+          protocolPositionKey: this.createPositionKey(config.positionManager, entry.tokenId),
+          displayName: `${PROTOCOL_NAME} #${entry.tokenId}`,
           baseAsset: config.baseAsset || 'USDC',
           countingMode: config.countingMode || 'partial',
           measureMethod: 'rewards',
           metadata: {
             walletAddress: checksumAddress,
-            tokenId,
+            tokenId: entry.tokenId,
             positionManager: config.positionManager,
             stateView: config.stateView,
-            poolId,
-            tickLower,
-            tickUpper,
+            poolId: entry.poolId,
+            tickLower: entry.tickLower,
+            tickUpper: entry.tickUpper,
             rewardTokenIndex,
             rewardDecimals,
-            currency0: poolKey.currency0,
-            currency1: poolKey.currency1,
-            fee: poolKey.fee.toString(),
-            tickSpacing: poolKey.tickSpacing.toString(),
-            hooks: poolKey.hooks,
+            currency0: entry.poolKey.currency0,
+            currency1: entry.poolKey.currency1,
+            fee: entry.poolKey.fee.toString(),
+            tickSpacing: entry.poolKey.tickSpacing.toString(),
+            hooks: entry.poolKey.hooks,
           },
           isActive: true,
         });
