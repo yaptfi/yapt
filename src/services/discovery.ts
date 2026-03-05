@@ -72,8 +72,26 @@ async function discoverPositionsCore(
 
           // Skip positions with less than $10 value (likely dust from closed positions)
           if (currentValue < 10) {
-            console.log(`Skipping ${adapter.protocolName} position with dust value $${currentValue.toFixed(2)}`);
-            continue;
+            // For rewards positions, currentValue is unclaimed fees, not principal.
+            // Admit the position if the adapter confirms it is still open (has liquidity).
+            if (positionData.measureMethod === 'rewards' && adapter.isPositionClosed) {
+              let closed = true;
+              try {
+                closed = await adapter.isPositionClosed(tempPosition);
+              } catch (err) {
+                console.warn(`[${adapter.protocolName}] isPositionClosed failed during discovery; skipping position:`, err);
+              }
+              if (!closed) {
+                console.log(`Admitting open rewards position ${adapter.protocolName} (rewards so far: $${currentValue.toFixed(2)})`);
+                // fall through to createPosition below
+              } else {
+                console.log(`Skipping closed/dust rewards position ${adapter.protocolName} ($${currentValue.toFixed(2)})`);
+                continue;
+              }
+            } else {
+              console.log(`Skipping ${adapter.protocolName} position with dust value $${currentValue.toFixed(2)}`);
+              continue;
+            }
           }
 
           const position = await createPosition(walletId, adapter.protocolKey, {
@@ -223,8 +241,26 @@ export async function discoverPositionsForProtocol(
 
       // Skip positions with less than $10 value (likely dust from closed positions)
       if (currentValue < 10) {
-        console.log(`Skipping ${adapter.protocolName} position with dust value $${currentValue.toFixed(2)}`);
-        continue;
+        // For rewards positions, currentValue is unclaimed fees, not principal.
+        // Admit the position if the adapter confirms it is still open (has liquidity).
+        if (positionData.measureMethod === 'rewards' && adapter.isPositionClosed) {
+          let closed = true;
+          try {
+            closed = await adapter.isPositionClosed(tempPosition);
+          } catch (err) {
+            console.warn(`[${adapter.protocolName}] isPositionClosed failed during discovery; skipping position:`, err);
+          }
+          if (!closed) {
+            console.log(`Admitting open rewards position ${adapter.protocolName} (rewards so far: $${currentValue.toFixed(2)})`);
+            // fall through to createPosition below
+          } else {
+            console.log(`Skipping closed/dust rewards position ${adapter.protocolName} ($${currentValue.toFixed(2)})`);
+            continue;
+          }
+        } else {
+          console.log(`Skipping ${adapter.protocolName} position with dust value $${currentValue.toFixed(2)}`);
+          continue;
+        }
       }
 
       const position = await createPosition(walletId, adapter.protocolKey, {
