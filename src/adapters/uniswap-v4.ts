@@ -66,14 +66,16 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
       scanProvider
     );
 
+    const fromBlock = config.deployBlock ?? 21688823;
+
     try {
       // Query all Transfer events where wallet is the recipient
       const transferFilter = positionManager.filters.Transfer(null, checksumAddress);
-      const receivedEvents = await positionManager.queryFilter(transferFilter);
+      const receivedEvents = await positionManager.queryFilter(transferFilter, fromBlock);
 
       // Query all Transfer events where wallet is the sender (to filter out transferred positions)
       const sentFilter = positionManager.filters.Transfer(checksumAddress, null);
-      const sentEvents = await positionManager.queryFilter(sentFilter);
+      const sentEvents = await positionManager.queryFilter(sentFilter, fromBlock);
 
       // Build set of tokenIds that were sent away
       const sentTokenIds = new Set(sentEvents.map((event: any) => event.args.tokenId.toString()));

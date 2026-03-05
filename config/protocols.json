@@ -23,14 +23,20 @@
         "decimals": 18
       }
     ],
-    "abiKeys": ["ERC20", "AaveAToken"]
+    "abiKeys": [
+      "ERC20",
+      "AaveAToken"
+    ]
   },
   "curve-scrvusd": {
     "name": "Curve Savings crvUSD",
     "token": "0x0655977FEb2f289A4aB78af67BAB0d17aAb84367",
     "decimals": 18,
     "type": "vault",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "convex-cvxcrv": {
     "name": "Convex Staked cvxCRV",
@@ -41,14 +47,20 @@
     "cvxCrvDecimals": 18,
     "type": "staking-rewards",
     "countingMode": "partial",
-    "abiKeys": ["ERC20", "ConvexCvxCrvStaking"]
+    "abiKeys": [
+      "ERC20",
+      "ConvexCvxCrvStaking"
+    ]
   },
   "curve-lending-wbtc": {
     "name": "Curve Lending Vault (wBTC)",
     "token": "0xccd37eb6374ae5b1f0b85ac97eff14770e0d0063",
     "decimals": 18,
     "type": "vault",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "convex-cvcrvusd-sdola": {
     "name": "Convex Staked cvcrvUSD (sDOLA)",
@@ -61,7 +73,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-sfrxusd": {
     "name": "Convex Staked cvcrvUSD (sfrxUSD)",
@@ -74,7 +90,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-susde": {
     "name": "Convex Staked cvcrvUSD (sUSDe)",
@@ -87,7 +107,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-fxsave": {
     "name": "Convex Staked cvcrvUSD (fxSAVE)",
@@ -100,7 +124,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-wbtc": {
     "name": "Convex Staked cvcrvUSD (WBTC)",
@@ -113,7 +141,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-sreusd": {
     "name": "Convex Staked cvcrvUSD (sreUSD)",
@@ -126,7 +158,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-wsteth": {
     "name": "Convex Staked cvcrvUSD (wstETH)",
@@ -139,7 +175,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "convex-cvcrvusd-weth": {
     "name": "Convex Staked cvcrvUSD (WETH)",
@@ -152,7 +192,11 @@
     "depositDecimals": 18,
     "type": "convex-curve-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626", "ConvexBaseRewardPool"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626",
+      "ConvexBaseRewardPool"
+    ]
   },
   "infinifi-siusd": {
     "name": "Infinifi Staked iUSD",
@@ -160,7 +204,10 @@
     "decimals": 18,
     "type": "vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "infinifi-liusd-4w": {
     "name": "Infinifi Locked iUSD (4w)",
@@ -172,7 +219,11 @@
     "exchangeRateScale": "1000000000000000000000000000",
     "type": "exchangeRate",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "InfinifiLockedPositionTokenV2", "InfinifiLockingController"]
+    "abiKeys": [
+      "ERC20",
+      "InfinifiLockedPositionTokenV2",
+      "InfinifiLockingController"
+    ]
   },
   "sky-savings-usds": {
     "name": "Sky Savings USDS",
@@ -180,7 +231,10 @@
     "decimals": 18,
     "type": "vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "fxsave-savings-usdc": {
     "name": "f(x) fxSAVE (USDC)",
@@ -189,7 +243,10 @@
     "shareDecimals": 18,
     "type": "vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "yearn-yvcrvusd-2": {
     "name": "Yearn yvcrvUSD-2 Vault",
@@ -201,7 +258,10 @@
     "shareDecimals": 18,
     "type": "yearn-v3-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "yearn-yvusds-1": {
     "name": "Yearn yvUSDS-1 Vault",
@@ -212,7 +272,10 @@
     "shareDecimals": 18,
     "type": "yearn-v3-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "yearn-yvusdc-1": {
     "name": "Yearn yvUSDC-1 Vault",
@@ -223,7 +286,10 @@
     "shareDecimals": 18,
     "type": "yearn-v3-vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "morpheus-gtusdc-prime": {
     "name": "Morpheus Gauntlet USDC Prime (gtUSDC)",
@@ -232,7 +298,10 @@
     "shareDecimals": 18,
     "type": "vault",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "ERC4626"
+    ]
   },
   "uniswap-v3-wbtc-usdt-arbitrum-rewards": {
     "name": "Uniswap v3 WBTC/USDT (Arbitrum)",
@@ -248,7 +317,9 @@
     "baseAsset": "USDT",
     "type": "lp-position",
     "countingMode": "partial",
-    "abiKeys": ["UniswapV3NonfungiblePositionManager"]
+    "abiKeys": [
+      "UniswapV3NonfungiblePositionManager"
+    ]
   },
   "uniswap-v3-paxg-usdc-ethereum-rewards": {
     "name": "Uniswap v3 PAXG/USDC (Ethereum)",
@@ -265,7 +336,9 @@
     "baseAsset": "USDC",
     "type": "lp-position",
     "countingMode": "partial",
-    "abiKeys": ["UniswapV3NonfungiblePositionManager"]
+    "abiKeys": [
+      "UniswapV3NonfungiblePositionManager"
+    ]
   },
   "uniswap-v4-usdc-usdt": {
     "name": "Uniswap v4 USDC/USDT",
@@ -282,7 +355,12 @@
     "tickSpacing": 1,
     "type": "lp-position",
     "countingMode": "count",
-    "abiKeys": ["ERC721", "UniswapV4PositionManager", "UniswapV4StateView"]
+    "abiKeys": [
+      "ERC721",
+      "UniswapV4PositionManager",
+      "UniswapV4StateView"
+    ],
+    "deployBlock": 21688823
   },
   "uniswap-v4-wbtc-usdc-rewards": {
     "name": "Uniswap v4 WBTC/USDC",
@@ -299,7 +377,11 @@
     "baseAsset": "USDC",
     "type": "lp-position",
     "countingMode": "partial",
-    "abiKeys": ["UniswapV4PositionManager", "UniswapV4StateView"]
+    "abiKeys": [
+      "UniswapV4PositionManager",
+      "UniswapV4StateView"
+    ],
+    "deployBlock": 21688823
   },
   "aave-umbrella-usdt": {
     "name": "Aave Umbrella Staked USDT",
@@ -309,7 +391,12 @@
     "decimals": 6,
     "type": "aave-umbrella",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "AaveUmbrellaStakeToken", "AaveRewardsController", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "AaveUmbrellaStakeToken",
+      "AaveRewardsController",
+      "ERC4626"
+    ]
   },
   "aave-umbrella-usdc": {
     "name": "Aave Umbrella Staked USDC",
@@ -318,7 +405,12 @@
     "decimals": 6,
     "type": "aave-umbrella",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "AaveUmbrellaStakeToken", "AaveRewardsController", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "AaveUmbrellaStakeToken",
+      "AaveRewardsController",
+      "ERC4626"
+    ]
   },
   "aave-umbrella-weth": {
     "name": "Aave Umbrella Staked WETH",
@@ -328,7 +420,12 @@
     "decimals": 18,
     "type": "aave-umbrella",
     "countingMode": "count",
-    "abiKeys": ["ERC20", "AaveUmbrellaStakeToken", "AaveRewardsController", "ERC4626"]
+    "abiKeys": [
+      "ERC20",
+      "AaveUmbrellaStakeToken",
+      "AaveRewardsController",
+      "ERC4626"
+    ]
   },
   "uniswap-v3-weth-usdc-arbitrum-rewards": {
     "name": "Uniswap v3 WETH/USDC (Arbitrum)",
@@ -344,7 +441,9 @@
     "baseAsset": "USDC",
     "type": "lp-position",
     "countingMode": "partial",
-    "abiKeys": ["UniswapV3NonfungiblePositionManager"]
+    "abiKeys": [
+      "UniswapV3NonfungiblePositionManager"
+    ]
   },
   "uniswap-v3-usdt-usdc-arbitrum": {
     "name": "Uniswap v3 USDT/USDC (Arbitrum)",
@@ -358,7 +457,10 @@
     "currency1Decimals": 6,
     "type": "lp-position",
     "countingMode": "count",
-    "abiKeys": ["UniswapV3NonfungiblePositionManager", "UniswapV3Pool"]
+    "abiKeys": [
+      "UniswapV3NonfungiblePositionManager",
+      "UniswapV3Pool"
+    ]
   },
   "pendle-pt-reusde-jun25": {
     "name": "Pendle PT reUSDe (Jun 2026)",
@@ -368,6 +470,8 @@
     "baseAsset": "USDe",
     "type": "pendle-pt",
     "countingMode": "count",
-    "abiKeys": ["ERC20"]
+    "abiKeys": [
+      "ERC20"
+    ]
   }
 }

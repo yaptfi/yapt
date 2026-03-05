@@ -71,12 +71,14 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
       scanProvider
     );
 
+    const fromBlock = config.deployBlock ?? 21688823;
+
     try {
       const transferFilter = positionManager.filters.Transfer(null, checksumAddress);
-      const receivedEvents = await positionManager.queryFilter(transferFilter);
+      const receivedEvents = await positionManager.queryFilter(transferFilter, fromBlock);
 
       const sentFilter = positionManager.filters.Transfer(checksumAddress, null);
-      const sentEvents = await positionManager.queryFilter(sentFilter);
+      const sentEvents = await positionManager.queryFilter(sentFilter, fromBlock);
 
       const sentTokenIds = new Set(sentEvents.map((event: any) => event.args.tokenId.toString()));
 

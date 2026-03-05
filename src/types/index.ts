@@ -167,6 +167,7 @@ export interface ProtocolConfig {
     currency1Decimals?: number;
     fee?: number;
     tickSpacing?: number;
+    deployBlock?: number;
     // Pendle PT fields
     ptToken?: string;
     maturityDate?: string; // ISO date string
