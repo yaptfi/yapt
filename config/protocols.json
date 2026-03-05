@@ -313,6 +313,22 @@
     "countingMode": "count",
     "abiKeys": ["ERC20", "AaveUmbrellaStakeToken", "AaveRewardsController", "ERC4626"]
   },
+  "uniswap-v3-weth-usdc-arbitrum-rewards": {
+    "name": "Uniswap v3 WETH/USDC (Arbitrum)",
+    "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+    "currency0": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "currency1": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "currency0Symbol": "WETH",
+    "currency1Symbol": "USDC",
+    "currency0Decimals": 18,
+    "currency1Decimals": 6,
+    "rewardToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "rewardDecimals": 6,
+    "baseAsset": "USDC",
+    "type": "lp-position",
+    "countingMode": "partial",
+    "abiKeys": ["UniswapV3NonfungiblePositionManager"]
+  },
   "uniswap-v3-usdt-usdc-arbitrum": {
     "name": "Uniswap v3 USDT/USDC (Arbitrum)",
     "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
