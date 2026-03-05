@@ -70,10 +70,11 @@ async function discoverPositionsCore(
           // Read current value before creating position to filter out dust
           const currentValue = await adapter.readCurrentValue(tempPosition);
 
-          // Skip positions with less than $10 value (likely dust from closed positions).
-          // Rewards positions track unclaimed fees, not principal — a fresh position
-          // discovered by the adapter is confirmed open, so bypass the $10 floor.
-          if (currentValue < 10 && positionData.measureMethod !== 'rewards') {
+          // Skip positions below the dust threshold. Rewards positions track unclaimed
+          // fees only — any positive value is live, but exactly $0 means closed/burned.
+          // Savings positions use a $10 floor to filter residual dust.
+          const dustThreshold = positionData.measureMethod === 'rewards' ? 0 : 10;
+          if (currentValue <= dustThreshold) {
             console.log(`Skipping ${adapter.protocolName} position with dust value $${currentValue.toFixed(2)}`);
             continue;
           }
@@ -223,10 +224,11 @@ export async function discoverPositionsForProtocol(
       // Read current value before creating position to filter out dust
       const currentValue = await adapter.readCurrentValue(tempPosition);
 
-      // Skip positions with less than $10 value (likely dust from closed positions).
-      // Rewards positions track unclaimed fees, not principal — a fresh position
-      // discovered by the adapter is confirmed open, so bypass the $10 floor.
-      if (currentValue < 10 && positionData.measureMethod !== 'rewards') {
+      // Skip positions below the dust threshold. Rewards positions track unclaimed
+      // fees only — any positive value is live, but exactly $0 means closed/burned.
+      // Savings positions use a $10 floor to filter residual dust.
+      const dustThreshold = positionData.measureMethod === 'rewards' ? 0 : 10;
+      if (currentValue <= dustThreshold) {
         console.log(`Skipping ${adapter.protocolName} position with dust value $${currentValue.toFixed(2)}`);
         continue;
       }
