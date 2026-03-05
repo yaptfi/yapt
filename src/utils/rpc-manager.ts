@@ -7,10 +7,13 @@ export interface RPCProviderConfig {
   id?: number;
   name: string;
   url: string;
+  arbitrumUrl?: string;
   callsPerSecond: number;
   callsPerDay?: number;
   priority: number;
   isActive: boolean;
+  supportsEthereum?: boolean; // Can serve Ethereum mainnet (chainId 1)
+  supportsArbitrum?: boolean; // Can serve Arbitrum One (chainId 42161)
   supportsLargeBlockScans?: boolean; // Can handle eth_getLogs with large block ranges (10k+ blocks)
   supportsENS?: boolean; // Can handle ENS resolution (resolveName, lookupAddress)
 }
@@ -425,6 +428,7 @@ export class RPCManager {
       this.resetDailyCountersIfNeeded(state);
 
       return {
+        id: state.config.id,
         name: state.config.name,
         url: state.config.url.substring(0, 50) + '...', // Truncate for display
         priority: state.config.priority,

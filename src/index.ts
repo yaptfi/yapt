@@ -10,6 +10,7 @@ import { join } from 'path';
 import { initializeScheduler, shutdownScheduler } from './jobs/scheduler';
 import { closePool } from './utils/db';
 import { getEnvVar } from './utils/config';
+import { initializeRPCProviders } from './utils/ethereum';
 import { initPlugins } from './plugins/loader';
 import { RedisStore } from 'connect-redis';
 
@@ -68,6 +69,10 @@ const server = Fastify(serverOptions);
 
 async function start() {
   try {
+    // Warm chain-aware RPC managers early so adapters can use managed providers
+    // without relying on temporary environment fallbacks.
+    await initializeRPCProviders();
+
     // CORS configuration - restrict to allowed origins in production
     const allowedOrigins = getEnvVar('ALLOWED_ORIGINS', 'http://localhost:8080,https://localhost:8080');
     await server.register(fastifyCors, {

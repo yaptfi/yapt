@@ -8,55 +8,86 @@ interface RPCProviderRow {
   id: number;
   name: string;
   url: string;
+  arbitrum_url: string | null;
   calls_per_second: string; // NUMERIC comes back as string
   calls_per_day: number | null;
   priority: number;
   is_active: boolean;
+  supports_ethereum: boolean;
+  supports_arbitrum: boolean;
   supports_large_block_scans: boolean;
   supports_ens: boolean;
   created_at: Date;
   updated_at: Date;
 }
 
+type RPCProviderUpdates =
+  Partial<Omit<RPCProviderConfig, 'id' | 'arbitrumUrl'>> & {
+    arbitrumUrl?: string | null;
+  };
+
+function hasArbitrumUrl(row: RPCProviderRow): boolean {
+  return row.arbitrum_url !== null && row.arbitrum_url.trim().length > 0;
+}
+
+function normalizeOptionalUrl(url: string | null | undefined): string | null {
+  if (url === undefined || url === null) {
+    return null;
+  }
+  const normalized = url.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 /**
  * Convert database row to RPCProviderConfig
  */
-function rowToConfig(row: RPCProviderRow): RPCProviderConfig {
+function rowToConfig(row: RPCProviderRow, chainId?: number): RPCProviderConfig {
+  const arbitrumUrl = normalizeOptionalUrl(row.arbitrum_url);
+  const effectiveUrl = chainId === 42161 && arbitrumUrl ? arbitrumUrl : row.url;
+
   return {
     id: row.id,
     name: row.name,
-    url: row.url,
+    url: effectiveUrl,
+    arbitrumUrl: arbitrumUrl ?? undefined,
     callsPerSecond: parseFloat(row.calls_per_second),
     callsPerDay: row.calls_per_day ?? undefined,
     priority: row.priority,
     isActive: row.is_active,
+    supportsEthereum: true,
+    supportsArbitrum: hasArbitrumUrl(row),
     supportsLargeBlockScans: row.supports_large_block_scans,
     supportsENS: row.supports_ens,
   };
 }
+
+const PROVIDER_SELECT = `SELECT
+  id,
+  name,
+  url,
+  arbitrum_url,
+  calls_per_second,
+  calls_per_day,
+  priority,
+  is_active,
+  supports_ethereum,
+  supports_arbitrum,
+  supports_large_block_scans,
+  supports_ens,
+  created_at,
+  updated_at
+ FROM rpc_provider`;
 
 /**
  * Get all RPC providers (active and inactive)
  */
 export async function getAllRPCProviders(): Promise<RPCProviderConfig[]> {
   const rows = await query<RPCProviderRow>(
-    `SELECT
-      id,
-      name,
-      url,
-      calls_per_second,
-      calls_per_day,
-      priority,
-      is_active,
-      supports_large_block_scans,
-      supports_ens,
-      created_at,
-      updated_at
-     FROM rpc_provider
+    `${PROVIDER_SELECT}
      ORDER BY priority DESC, created_at ASC`
   );
 
-  return rows.map(rowToConfig);
+  return rows.map((row) => rowToConfig(row));
 }
 
 /**
@@ -64,24 +95,12 @@ export async function getAllRPCProviders(): Promise<RPCProviderConfig[]> {
  */
 export async function getActiveRPCProviders(): Promise<RPCProviderConfig[]> {
   const rows = await query<RPCProviderRow>(
-    `SELECT
-      id,
-      name,
-      url,
-      calls_per_second,
-      calls_per_day,
-      priority,
-      is_active,
-      supports_large_block_scans,
-      supports_ens,
-      created_at,
-      updated_at
-     FROM rpc_provider
+    `${PROVIDER_SELECT}
      WHERE is_active = true
      ORDER BY priority DESC, created_at ASC`
   );
 
-  return rows.map(rowToConfig);
+  return rows.map((row) => rowToConfig(row));
 }
 
 /**
@@ -89,19 +108,7 @@ export async function getActiveRPCProviders(): Promise<RPCProviderConfig[]> {
  */
 export async function getRPCProviderById(id: number): Promise<RPCProviderConfig | null> {
   const row = await queryOne<RPCProviderRow>(
-    `SELECT
-      id,
-      name,
-      url,
-      calls_per_second,
-      calls_per_day,
-      priority,
-      is_active,
-      supports_large_block_scans,
-      supports_ens,
-      created_at,
-      updated_at
-     FROM rpc_provider
+    `${PROVIDER_SELECT}
      WHERE id = $1`,
     [id]
   );
@@ -114,19 +121,7 @@ export async function getRPCProviderById(id: number): Promise<RPCProviderConfig 
  */
 export async function getRPCProviderByName(name: string): Promise<RPCProviderConfig | null> {
   const row = await queryOne<RPCProviderRow>(
-    `SELECT
-      id,
-      name,
-      url,
-      calls_per_second,
-      calls_per_day,
-      priority,
-      is_active,
-      supports_large_block_scans,
-      supports_ens,
-      created_at,
-      updated_at
-     FROM rpc_provider
+    `${PROVIDER_SELECT}
      WHERE name = $1`,
     [name]
   );
@@ -140,17 +135,34 @@ export async function getRPCProviderByName(name: string): Promise<RPCProviderCon
 export async function createRPCProvider(
   config: Omit<RPCProviderConfig, 'id'>
 ): Promise<RPCProviderConfig> {
+  const normalizedArbitrumUrl = normalizeOptionalUrl(config.arbitrumUrl);
+
   const row = await queryOne<RPCProviderRow>(
-    `INSERT INTO rpc_provider (name, url, calls_per_second, calls_per_day, priority, is_active, supports_large_block_scans, supports_ens)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING
-       id,
+    `INSERT INTO rpc_provider (
        name,
        url,
+       arbitrum_url,
        calls_per_second,
        calls_per_day,
        priority,
        is_active,
+       supports_ethereum,
+       supports_arbitrum,
+       supports_large_block_scans,
+       supports_ens
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING
+       id,
+       name,
+       url,
+       arbitrum_url,
+       calls_per_second,
+       calls_per_day,
+       priority,
+       is_active,
+       supports_ethereum,
+       supports_arbitrum,
        supports_large_block_scans,
        supports_ens,
        created_at,
@@ -158,10 +170,13 @@ export async function createRPCProvider(
     [
       config.name,
       config.url,
+      normalizedArbitrumUrl,
       config.callsPerSecond,
       config.callsPerDay ?? null,
       config.priority,
       config.isActive,
+      true,
+      normalizedArbitrumUrl !== null,
       config.supportsLargeBlockScans ?? true,
       config.supportsENS ?? true,
     ]
@@ -179,10 +194,10 @@ export async function createRPCProvider(
  */
 export async function updateRPCProvider(
   id: number,
-  updates: Partial<Omit<RPCProviderConfig, 'id'>>
+  updates: RPCProviderUpdates
 ): Promise<RPCProviderConfig | null> {
   const fields: string[] = [];
-  const values: any[] = [];
+  const values: unknown[] = [];
   let paramIndex = 1;
 
   if (updates.name !== undefined) {
@@ -192,6 +207,13 @@ export async function updateRPCProvider(
   if (updates.url !== undefined) {
     fields.push(`url = $${paramIndex++}`);
     values.push(updates.url);
+  }
+  if (updates.arbitrumUrl !== undefined) {
+    const normalizedArbitrumUrl = normalizeOptionalUrl(updates.arbitrumUrl);
+    fields.push(`arbitrum_url = $${paramIndex++}`);
+    values.push(normalizedArbitrumUrl);
+    fields.push(`supports_arbitrum = $${paramIndex++}`);
+    values.push(normalizedArbitrumUrl !== null);
   }
   if (updates.callsPerSecond !== undefined) {
     fields.push(`calls_per_second = $${paramIndex++}`);
@@ -219,14 +241,10 @@ export async function updateRPCProvider(
   }
 
   if (fields.length === 0) {
-    // No updates provided
     return getRPCProviderById(id);
   }
 
-  // Add updated_at
   fields.push(`updated_at = NOW()`);
-
-  // Add WHERE clause parameter
   values.push(id);
 
   const row = await queryOne<RPCProviderRow>(
@@ -237,10 +255,13 @@ export async function updateRPCProvider(
        id,
        name,
        url,
+       arbitrum_url,
        calls_per_second,
        calls_per_day,
        priority,
        is_active,
+       supports_ethereum,
+       supports_arbitrum,
        supports_large_block_scans,
        supports_ens,
        created_at,
@@ -283,5 +304,29 @@ export async function hasRPCProviders(): Promise<boolean> {
   const result = await queryOne<{ count: string }>(
     `SELECT COUNT(*) as count FROM rpc_provider`
   );
-  return result ? parseInt(result.count) > 0 : false;
+  return result ? parseInt(result.count, 10) > 0 : false;
+}
+
+/**
+ * Get active providers that support a specific chain.
+ * Supported chain IDs:
+ * - 1: Ethereum mainnet
+ * - 42161: Arbitrum One
+ */
+export async function getActiveRPCProvidersForChain(chainId: number): Promise<RPCProviderConfig[]> {
+  let chainFilter = '1 = 1';
+  if (chainId === 42161) {
+    chainFilter = `arbitrum_url IS NOT NULL AND length(trim(arbitrum_url)) > 0`;
+  } else if (chainId !== 1) {
+    return [];
+  }
+
+  const rows = await query<RPCProviderRow>(
+    `${PROVIDER_SELECT}
+     WHERE is_active = true
+       AND ${chainFilter}
+     ORDER BY priority DESC, created_at ASC`
+  );
+
+  return rows.map((row) => rowToConfig(row, chainId));
 }

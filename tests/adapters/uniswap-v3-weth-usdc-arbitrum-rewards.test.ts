@@ -13,13 +13,15 @@ jest.mock('../../src/utils/config', () => ({
 }));
 
 jest.mock('../../src/utils/ethereum', () => ({
+  ARBITRUM_CHAIN_ID: 42161,
   getContract: jest.fn(),
+  getProviderForChain: jest.fn(),
   toChecksumAddress: (a: string) => a,
   formatUnits: jest.fn(),
 }));
 
 import { getProtocolConfig, getStablePriceOverrides } from '../../src/utils/config';
-import { getContract, formatUnits } from '../../src/utils/ethereum';
+import { getContract, getProviderForChain, formatUnits } from '../../src/utils/ethereum';
 
 const CONFIG = {
   [PROTOCOL_KEY]: {
@@ -58,22 +60,12 @@ const POSITION: Position = {
 };
 
 describe('UniswapV3WethUsdcArbitrumRewardsAdapter', () => {
-  const originalArbitrumRpc = process.env.ARBITRUM_RPC_URL;
-
   beforeEach(() => {
-    process.env.ARBITRUM_RPC_URL = 'http://localhost:8545';
+    (getProviderForChain as jest.Mock).mockReturnValue({});
     (getProtocolConfig as jest.Mock).mockReturnValue(CONFIG);
     (getStablePriceOverrides as jest.Mock).mockReturnValue({ USDC: 1.0 });
     (formatUnits as jest.Mock).mockReturnValue('0');
     jest.clearAllMocks();
-  });
-
-  afterAll(() => {
-    if (originalArbitrumRpc === undefined) {
-      delete process.env.ARBITRUM_RPC_URL;
-    } else {
-      process.env.ARBITRUM_RPC_URL = originalArbitrumRpc;
-    }
   });
 
   it('discovers only matching WETH/USDC positions and marks them as rewards-based', async () => {
@@ -81,7 +73,14 @@ describe('UniswapV3WethUsdcArbitrumRewardsAdapter', () => {
       balanceOf: jest.fn().mockResolvedValue(2n),
       tokenOfOwnerByIndex: jest.fn().mockResolvedValueOnce(456n).mockResolvedValueOnce(789n),
       positions: jest.fn()
-        .mockResolvedValueOnce({ token0: WETH, token1: USDC, fee: 3000n })
+        .mockResolvedValueOnce({
+          token0: WETH,
+          token1: USDC,
+          fee: 3000n,
+          liquidity: 1n,
+          tokensOwed0: 0n,
+          tokensOwed1: 0n,
+        })
         .mockResolvedValueOnce({ token0: WETH, token1: '0x0000000000000000000000000000000000000001', fee: 3000n }),
     };
     (getContract as jest.Mock).mockReturnValue(manager);
@@ -101,11 +100,67 @@ describe('UniswapV3WethUsdcArbitrumRewardsAdapter', () => {
       rewardToken: USDC,
       rewardDecimals: 6,
       rewardTokenIndex: 1,
+      allowZeroValueDiscovery: true,
     });
   });
 
-  it('returns empty discovery results when ARBITRUM_RPC_URL is missing', async () => {
-    delete process.env.ARBITRUM_RPC_URL;
+  it('skips fully exhausted matching NFTs during discovery', async () => {
+    const manager = {
+      balanceOf: jest.fn().mockResolvedValue(2n),
+      tokenOfOwnerByIndex: jest.fn().mockResolvedValueOnce(456n).mockResolvedValueOnce(457n),
+      positions: jest.fn()
+        .mockResolvedValueOnce({
+          token0: WETH,
+          token1: USDC,
+          fee: 3000n,
+          liquidity: 0n,
+          tokensOwed0: 0n,
+          tokensOwed1: 0n,
+        })
+        .mockResolvedValueOnce({
+          token0: WETH,
+          token1: USDC,
+          fee: 3000n,
+          liquidity: 1n,
+          tokensOwed0: 0n,
+          tokensOwed1: 0n,
+        }),
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3WethUsdcArbitrumRewardsAdapter();
+    const discovered = await adapter.discover('0xabc0000000000000000000000000000000000000');
+
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]?.protocolPositionKey).toBe(`${POSITION_MANAGER}:457`);
+  });
+
+  it('discovers positions when positions() output is tuple-indexed', async () => {
+    const manager = {
+      balanceOf: jest.fn().mockResolvedValue(1n),
+      tokenOfOwnerByIndex: jest.fn().mockResolvedValue(456n),
+      positions: jest.fn().mockResolvedValue({
+        2: WETH,
+        3: USDC,
+        4: 3000n,
+        7: 1n,
+        10: 0n,
+        11: 0n,
+      }),
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3WethUsdcArbitrumRewardsAdapter();
+    const discovered = await adapter.discover('0xabc0000000000000000000000000000000000000');
+
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]?.protocolPositionKey).toBe(`${POSITION_MANAGER}:456`);
+  });
+
+  it('returns empty discovery results when Arbitrum provider is unavailable', async () => {
+    (getProviderForChain as jest.Mock).mockImplementation(() => {
+      throw new Error('provider unavailable');
+    });
 
     const adapter = new UniswapV3WethUsdcArbitrumRewardsAdapter();
     const discovered = await adapter.discover('0xabc0000000000000000000000000000000000000');
@@ -198,11 +253,13 @@ describe('UniswapV3WethUsdcArbitrumRewardsAdapter', () => {
     expect(manager.positions).not.toHaveBeenCalled();
   });
 
-  it('throws when ARBITRUM_RPC_URL is missing during value reads', async () => {
-    delete process.env.ARBITRUM_RPC_URL;
+  it('throws when Arbitrum provider is unavailable during value reads', async () => {
+    (getProviderForChain as jest.Mock).mockImplementation(() => {
+      throw new Error('provider unavailable');
+    });
 
     const adapter = new UniswapV3WethUsdcArbitrumRewardsAdapter();
 
-    await expect(adapter.readCurrentValue(POSITION)).rejects.toThrow('ARBITRUM_RPC_URL is required');
+    await expect(adapter.readCurrentValue(POSITION)).rejects.toThrow('Arbitrum RPC provider is required');
   });
 });

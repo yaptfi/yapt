@@ -1,138 +1,254 @@
 import { ethers, Contract, Provider } from 'ethers';
-import { getAbi } from './config';
-import { getEnvVar } from './config';
+import { getAbi, getEnvVar } from './config';
 import { RPC_MIN_INTERVAL_MS } from '../constants';
 import { RPCProxyProvider, createManagedProvider } from './rpc-proxy-provider';
 import { RPCProviderConfig } from './rpc-manager';
+
+export const ETHEREUM_CHAIN_ID = 1;
+export const ARBITRUM_CHAIN_ID = 42161;
+
+const SUPPORTED_CHAIN_IDS = [ETHEREUM_CHAIN_ID, ARBITRUM_CHAIN_ID] as const;
 
 /**
  * Throttle RPC calls to respect provider rate limits
  *
  * NOTE: This function is kept for backward compatibility but is now a no-op.
  * Rate limiting is handled automatically by the RPCManager.
- *
- * Usage: Call this before any direct RPC operation (getBlockNumber, contract calls, etc.)
- * to ensure minimum spacing between requests. Configure via RPC_MIN_INTERVAL_MS env var.
- *
- * @example
- * await rpcThrottle();
- * const block = await provider.getBlockNumber();
  */
 export async function rpcThrottle(): Promise<void> {
-  // No-op - rate limiting now handled by RPCManager
-  // Kept for backward compatibility
   return;
 }
 
-let provider: Provider | null = null;
+const providersByChain = new Map<number, Provider>();
+const initializationByChain = new Map<number, Promise<void>>();
+
+function getChainLabel(chainId: number): string {
+  if (chainId === ETHEREUM_CHAIN_ID) return 'Ethereum';
+  if (chainId === ARBITRUM_CHAIN_ID) return 'Arbitrum';
+  return `chain:${chainId}`;
+}
+
+function getSingleRpcEnvKey(chainId: number): string {
+  if (chainId === ETHEREUM_CHAIN_ID) return 'ETH_RPC_URL';
+  if (chainId === ARBITRUM_CHAIN_ID) return 'ARBITRUM_RPC_URL';
+  return `RPC_URL_${chainId}`;
+}
+
+function getMultiRpcEnvKeys(chainId: number): { urlsKey: string; limitsKey: string } {
+  if (chainId === ETHEREUM_CHAIN_ID) {
+    return { urlsKey: 'ETH_RPC_URLS', limitsKey: 'ETH_RPC_LIMITS' };
+  }
+  if (chainId === ARBITRUM_CHAIN_ID) {
+    return { urlsKey: 'ARBITRUM_RPC_URLS', limitsKey: 'ARBITRUM_RPC_LIMITS' };
+  }
+  return {
+    urlsKey: `RPC_URLS_${chainId}`,
+    limitsKey: `RPC_LIMITS_${chainId}`,
+  };
+}
+
+function getSingleProviderUrlFromEnv(chainId: number): string | null {
+  const key = getSingleRpcEnvKey(chainId);
+  const value = process.env[key];
+  if (!value || value.trim().length === 0) {
+    return null;
+  }
+  return value.trim();
+}
+
+function parseMultiProviderEnv(chainId: number): Array<{ url: string; callsPerSecond: number }> {
+  const { urlsKey, limitsKey } = getMultiRpcEnvKeys(chainId);
+  const rawUrls = process.env[urlsKey];
+  if (!rawUrls) {
+    return [];
+  }
+
+  const urls = rawUrls.split(',').map((url) => url.trim()).filter((url) => url.length > 0);
+  if (urls.length === 0) {
+    return [];
+  }
+
+  const rawLimits = process.env[limitsKey];
+  const limits = rawLimits
+    ? rawLimits.split(',').map((limit) => parseFloat(limit.trim()))
+    : urls.map(() => 10);
+
+  if (rawLimits && limits.length !== urls.length) {
+    console.warn(`[${getChainLabel(chainId)}] ${urlsKey} and ${limitsKey} length mismatch, using defaults`);
+  }
+
+  return urls.map((url, index) => ({
+    url,
+    callsPerSecond: Number.isFinite(limits[index]) && limits[index] > 0 ? limits[index] : 10,
+  }));
+}
+
+function getFirstMultiProviderUrlFromEnv(chainId: number): string | null {
+  const configs = parseMultiProviderEnv(chainId);
+  if (configs.length === 0) {
+    return null;
+  }
+  return configs[0].url;
+}
 
 /**
- * Initialize RPC providers from database or environment variables
+ * Initialize providers for a specific chain from database or environment.
  *
  * Priority order:
- * 1. Database (if providers exist)
- * 2. Environment variables (ETH_RPC_URLS, ETH_RPC_LIMITS)
- * 3. Single provider fallback (ETH_RPC_URL)
+ * 1. Database providers filtered by chain capability
+ * 2. Chain-specific environment multi-provider config
+ * 3. Chain-specific single provider fallback
  */
-async function initializeProvider(): Promise<Provider> {
+async function initializeProviderForChain(chainId: number): Promise<Provider> {
+  const chainLabel = getChainLabel(chainId);
+
   try {
-    // Try to load from database first
-    const { hasRPCProviders, getActiveRPCProviders } = await import('../models/rpc-provider');
+    const { hasRPCProviders, getActiveRPCProvidersForChain } = await import('../models/rpc-provider');
 
     if (await hasRPCProviders()) {
-      const dbProviders = await getActiveRPCProviders();
-
+      const dbProviders = await getActiveRPCProvidersForChain(chainId);
       if (dbProviders.length > 0) {
-        console.log(`[Ethereum] Initialized with ${dbProviders.length} RPC provider(s) from database`);
+        console.log(`[${chainLabel}] Initialized with ${dbProviders.length} RPC provider(s) from database`);
         return createManagedProvider(dbProviders);
       }
     }
   } catch {
-    // Database not ready or migration not run yet, fall through to env
-    console.log('[Ethereum] Database not available, using environment configuration');
+    console.log(`[${chainLabel}] Database not available, using environment configuration`);
   }
 
-  // Try multi-provider env configuration
-  const rpcUrls = process.env.ETH_RPC_URLS;
-  const rpcLimits = process.env.ETH_RPC_LIMITS;
-
-  if (rpcUrls && rpcUrls.includes(',')) {
-    const urls = rpcUrls.split(',').map(u => u.trim()).filter(u => u.length > 0);
-    const limits = rpcLimits
-      ? rpcLimits.split(',').map(l => parseFloat(l.trim()))
-      : urls.map(() => 10); // Default 10 calls/sec
-
-    if (urls.length !== limits.length) {
-      console.warn('[Ethereum] ETH_RPC_URLS and ETH_RPC_LIMITS length mismatch, using defaults');
-    }
-
-    const configs: RPCProviderConfig[] = urls.map((url, index) => ({
-      name: `Provider ${index + 1}`,
-      url,
-      callsPerSecond: limits[index] || 10,
-      priority: urls.length - index, // First URL gets highest priority
+  const envMultiProviders = parseMultiProviderEnv(chainId);
+  if (envMultiProviders.length > 0) {
+    const configs: RPCProviderConfig[] = envMultiProviders.map((entry, index) => ({
+      name: `${chainLabel} Provider ${index + 1}`,
+      url: entry.url,
+      callsPerSecond: entry.callsPerSecond,
+      priority: envMultiProviders.length - index,
       isActive: true,
+      supportsEthereum: chainId === ETHEREUM_CHAIN_ID,
+      supportsArbitrum: chainId === ARBITRUM_CHAIN_ID,
     }));
 
-    console.log(`[Ethereum] Initialized with ${configs.length} RPC provider(s) from environment`);
+    console.log(`[${chainLabel}] Initialized with ${configs.length} RPC provider(s) from environment`);
     return createManagedProvider(configs);
   }
 
-  // Fallback to single provider
-  const singleUrl = getEnvVar('ETH_RPC_URL');
-  const callsPerSecond = RPC_MIN_INTERVAL_MS > 0 ? 1000 / RPC_MIN_INTERVAL_MS : 10;
+  const singleUrl = getSingleProviderUrlFromEnv(chainId);
+  if (singleUrl) {
+    const callsPerSecond = RPC_MIN_INTERVAL_MS > 0 ? 1000 / RPC_MIN_INTERVAL_MS : 10;
+    const config: RPCProviderConfig = {
+      name: `${chainLabel} Default Provider`,
+      url: singleUrl,
+      callsPerSecond,
+      priority: 0,
+      isActive: true,
+      supportsEthereum: chainId === ETHEREUM_CHAIN_ID,
+      supportsArbitrum: chainId === ARBITRUM_CHAIN_ID,
+    };
 
-  const config: RPCProviderConfig = {
-    name: 'Default Provider',
-    url: singleUrl,
-    callsPerSecond,
-    priority: 0,
-    isActive: true,
-  };
+    console.log(`[${chainLabel}] Initialized with single RPC provider from ${getSingleRpcEnvKey(chainId)}`);
+    return createManagedProvider([config]);
+  }
 
-  console.log('[Ethereum] Initialized with single RPC provider from ETH_RPC_URL');
-  return createManagedProvider([config]);
+  throw new Error(
+    `[${chainLabel}] No provider configured. Set ${getSingleRpcEnvKey(chainId)} or ${getMultiRpcEnvKeys(chainId).urlsKey}, ` +
+    `or configure chain-capable providers in rpc_provider table.`
+  );
+}
+
+async function ensureChainInitialized(chainId: number): Promise<void> {
+  const existingInit = initializationByChain.get(chainId);
+  if (existingInit) {
+    await existingInit;
+    return;
+  }
+
+  const initPromise = initializeProviderForChain(chainId)
+    .then((provider) => {
+      providersByChain.set(chainId, provider);
+    })
+    .finally(() => {
+      initializationByChain.delete(chainId);
+    });
+
+  initializationByChain.set(chainId, initPromise);
+  await initPromise;
+}
+
+/**
+ * Eagerly initialize all supported chain providers.
+ *
+ * Intended for server startup. Failures are logged per-chain to keep boot resilient.
+ */
+export async function initializeRPCProviders(): Promise<void> {
+  const initResults = await Promise.allSettled(
+    SUPPORTED_CHAIN_IDS.map((chainId) => ensureChainInitialized(chainId))
+  );
+
+  initResults.forEach((result, index) => {
+    const chainId = SUPPORTED_CHAIN_IDS[index];
+    if (result.status === 'rejected') {
+      console.warn(`[${getChainLabel(chainId)}] RPC manager initialization failed: ${result.reason}`);
+    }
+  });
+}
+
+/**
+ * Get a provider for a specific chain.
+ * Defaults to managed providers when initialized, otherwise falls back to env URLs.
+ */
+export function getProviderForChain(chainId: number): Provider {
+  const existing = providersByChain.get(chainId);
+  if (existing) {
+    return existing;
+  }
+
+  // Attempt asynchronous managed initialization in the background.
+  void ensureChainInitialized(chainId).catch((error) => {
+    console.error(`[${getChainLabel(chainId)}] Failed to initialize managed provider:`, error);
+  });
+
+  const tempUrl = getSingleProviderUrlFromEnv(chainId) || getFirstMultiProviderUrlFromEnv(chainId);
+  if (!tempUrl) {
+    throw new Error(
+      `[${getChainLabel(chainId)}] RPC provider is not initialized and no environment fallback is set. ` +
+      `Set ${getSingleRpcEnvKey(chainId)} or initialize chain-aware providers in database.`
+    );
+  }
+
+  const temporaryProvider = new ethers.JsonRpcProvider(tempUrl, chainId);
+  providersByChain.set(chainId, temporaryProvider);
+  return temporaryProvider;
 }
 
 export function getProvider(): Provider {
-  if (!provider) {
-    // Synchronously create a temporary provider for immediate use
-    // The actual initialization happens asynchronously
-    const tempUrl = getEnvVar('ETH_RPC_URL');
-    provider = new ethers.JsonRpcProvider(tempUrl);
-
-    // Replace with managed provider asynchronously
-    initializeProvider()
-      .then(managedProvider => {
-        provider = managedProvider;
-      })
-      .catch(error => {
-        console.error('[Ethereum] Failed to initialize managed provider:', error);
-        // Keep using the temporary provider
-      });
-  }
-  return provider;
+  return getProviderForChain(ETHEREUM_CHAIN_ID);
 }
 
 /**
- * Force reload of RPC providers from database
- * Useful after adding/removing providers at runtime
+ * Force reload of RPC providers for all supported chains.
  */
 export async function reloadRPCProviders(): Promise<void> {
-  provider = null;
-  provider = await initializeProvider();
-  console.log('[Ethereum] RPC providers reloaded');
+  providersByChain.clear();
+  await initializeRPCProviders();
+  console.log('[Ethereum] RPC providers reloaded for all configured chains');
 }
 
-/**
- * Get RPC manager status (for monitoring)
- * Returns null if not using managed provider
- */
-export function getRPCStatus() {
+function getRPCStatusForChain(chainId: number) {
+  const provider = providersByChain.get(chainId);
   if (provider && provider instanceof RPCProxyProvider) {
     return (provider as RPCProxyProvider).getManagerStatus();
   }
   return null;
+}
+
+/**
+ * Get RPC manager status by chain.
+ */
+export function getRPCStatus() {
+  return {
+    ethereum: getRPCStatusForChain(ETHEREUM_CHAIN_ID),
+    arbitrum: getRPCStatusForChain(ARBITRUM_CHAIN_ID),
+  };
 }
 
 export function getContract(address: string, abi: any[], providerOverride?: Provider): Contract {
@@ -253,4 +369,13 @@ export async function lookupEnsForAddress(address: string): Promise<string | nul
     console.error(`[ENS] Reverse lookup failed for ${address}:`, error);
     return null;
   }
+}
+
+// Backwards-compatible required env helpers for scripts that still rely on explicit values
+export function getEthereumRpcUrlOrThrow(): string {
+  return getEnvVar('ETH_RPC_URL');
+}
+
+export function getArbitrumRpcUrlOrThrow(): string {
+  return getEnvVar('ARBITRUM_RPC_URL');
 }

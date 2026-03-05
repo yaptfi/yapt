@@ -31,7 +31,14 @@ Focus on stable yield. Skip the volatile crypto bags.
    cp .env.example .env
    ```
 
-2. **Edit `.env` file** and configure these required variables:
+2. **Set a dedicated local Compose project name** (prevents collisions with other compose runs, including prod overrides):
+   ```bash
+   export COMPOSE_PROJECT_NAME=yapt-local
+   ```
+
+   Tip: add this to your shell profile for persistence (`~/.zshrc` or `~/.bashrc`).
+
+3. **Edit `.env` file** and configure these required variables:
    ```bash
    # Generate a secure session secret
    SESSION_SECRET=$(openssl rand -base64 32)
@@ -48,17 +55,17 @@ Focus on stable yield. Skip the volatile crypto bags.
 
    **Important**: Replace `YOUR_API_KEY` with your actual Infura/Alchemy API key.
 
-3. **Install dependencies** (for running migrations):
+4. **Install dependencies** (for running migrations):
    ```bash
    npm install
    ```
 
-4. **Start services**:
+5. **Start services**:
    ```bash
    docker compose up -d
    ```
 
-5. **Run migrations** (from host machine):
+6. **Run migrations** (from host machine):
    ```bash
    # Using the DATABASE_URL from your .env file
    DATABASE_URL=postgresql://defi_user:defi_password@localhost:5432/defi_tracker npm run migrate
@@ -66,12 +73,12 @@ Focus on stable yield. Skip the volatile crypto bags.
 
    **Note**: If you changed database credentials in step 2, update this command accordingly.
 
-6. **Access the app**:
+7. **Access the app**:
    - Frontend: http://localhost:8080
    - API: http://localhost:3000/api
    - First visit: Register with username + passkey (WebAuthn)
 
-7. **Optional**: Configure multiple RPC providers via admin panel at `/admin.html` (see CLAUDE.md for details)
+8. **Optional**: Configure multiple RPC providers via admin panel at `/admin.html` (see CLAUDE.md for details)
 
 ### Local Development
 
@@ -195,16 +202,19 @@ curl -X POST http://localhost:3000/api/portfolio/refresh \
 
 Yapt uses capability-based routing to handle RPC provider limitations:
 
-- **Normal calls** (balances, state): Load-balanced across all providers
+- **Chain-aware routing**: Providers are selected by chain capability (Ethereum and/or Arbitrum)
+- **Normal calls** (balances, state): Load-balanced across healthy providers for that chain
 - **Historical scans** (Uniswap discovery): Only providers with `supportsLargeBlockScans=true`
 
 **Single Provider** (simplest):
 ```env
 ETH_RPC_URL=https://mainnet.infura.io/v3/YOUR_KEY
+# ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
 ```
 
 **Multiple Providers** (optimal):
 - Add via admin panel at `/admin.html`
+- Set chain capabilities plus provider features (Large Block Scans, ENS)
 - Configure Alchemy (fast, no scans) + Infura (slower, supports scans)
 - See `CLAUDE.md` for detailed configuration
 

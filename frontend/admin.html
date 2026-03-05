@@ -264,6 +264,69 @@
     .metric strong {
       color: var(--text);
     }
+
+    .rpc-help {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    .rpc-help strong {
+      color: var(--text);
+    }
+
+    .chain-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      border-radius: 999px;
+      padding: 0.2rem 0.55rem;
+      margin-right: 0.35rem;
+      margin-bottom: 0.25rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .chain-badge.dim {
+      opacity: 0.45;
+    }
+
+    .compact-input {
+      width: 100%;
+      max-width: 110px;
+      padding: 0.35rem 0.45rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.8rem;
+    }
+
+    .compact-input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .btn-small {
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--text);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.55rem;
+      cursor: pointer;
+    }
+
+    .btn-small:hover {
+      opacity: 0.85;
+    }
   </style>
 </head>
 <body>
@@ -288,6 +351,13 @@
     <div class="rpc-section">
       <h2 style="margin-bottom: 1.5rem;">RPC Providers</h2>
 
+      <div class="rpc-help">
+        <div><strong>How provider routing works:</strong> Ethereum uses the main URL. Arbitrum uses the optional Arbitrum URL when present, then health and rate limits apply per chain.</div>
+        <div style="margin-top: 0.35rem;"><strong>Priority:</strong> higher numbers are preferred first. <strong>0</strong> means neutral/default (not disabled).</div>
+        <div style="margin-top: 0.35rem;"><strong>Calls/Second:</strong> max average request rate allowed for this provider. Keep below your vendor quota.</div>
+        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> “Large Block Scans” is for long `eth_getLogs` ranges; “ENS” is required for `*.eth` resolution.</div>
+      </div>
+
       <div class="add-provider-form">
         <h3 style="margin-top: 0; margin-bottom: 1rem;">Add New Provider</h3>
         <form id="addProviderForm" onsubmit="addProvider(event)">
@@ -301,6 +371,10 @@
               <input type="url" id="providerUrl" required placeholder="https://mainnet.infura.io/v3/...">
             </div>
             <div class="form-field">
+              <label for="providerArbitrumUrl">Arbitrum URL (optional)</label>
+              <input type="url" id="providerArbitrumUrl" placeholder="https://arbitrum-mainnet.infura.io/v3/...">
+            </div>
+            <div class="form-field">
               <label for="providerCallsPerSec">Calls/Second *</label>
               <input type="number" id="providerCallsPerSec" required min="0.1" max="1000" step="0.1" value="10">
             </div>
@@ -311,6 +385,9 @@
             <div class="form-field">
               <label for="providerPriority">Priority *</label>
               <input type="number" id="providerPriority" required value="0" placeholder="Higher = preferred">
+              <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
+                Higher value = preferred first. `0` is a normal default.
+              </div>
             </div>
             <div class="form-field">
               <label for="providerSupportsLargeScans" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -532,11 +609,20 @@
           return;
         }
 
-        // Create a map of provider status by name
-        const statusMap = new Map();
-        if (status && status.providers) {
-          status.providers.forEach(p => {
-            statusMap.set(p.name, p);
+        const ethStatusMap = new Map();
+        const arbStatusMap = new Map();
+
+        if (status?.ethereum?.providers) {
+          status.ethereum.providers.forEach((p) => {
+            const key = p.id !== undefined ? String(p.id) : p.name;
+            ethStatusMap.set(key, p);
+          });
+        }
+
+        if (status?.arbitrum?.providers) {
+          status.arbitrum.providers.forEach((p) => {
+            const key = p.id !== undefined ? String(p.id) : p.name;
+            arbStatusMap.set(key, p);
           });
         }
 
@@ -544,21 +630,21 @@
           <table style="table-layout: fixed; width: 100%;">
             <colgroup>
               <col style="width: 10%;">
-              <col style="width: 15%;">
-              <col style="width: 8%;">
-              <col style="width: 5%;">
+              <col style="width: 16%;">
+              <col style="width: 10%;">
               <col style="width: 12%;">
-              <col style="width: 8%;">
+              <col style="width: 18%;">
+              <col style="width: 10%;">
               <col style="width: 12%;">
-              <col style="width: 15%;">
+              <col style="width: 12%;">
             </colgroup>
             <thead>
               <tr>
                 <th>Name</th>
                 <th>URL</th>
-                <th>Rate Limits</th>
-                <th>Priority</th>
+                <th>Chains</th>
                 <th>Capabilities</th>
+                <th>Rate Limits & Priority</th>
                 <th>Status</th>
                 <th>Metrics</th>
                 <th>Actions</th>
@@ -566,51 +652,99 @@
             </thead>
             <tbody>
               ${providers.map(provider => {
-                const providerStatus = statusMap.get(provider.name);
-                const isHealthy = providerStatus?.isHealthy ?? provider.isActive;
-                const statusClass = !provider.isActive ? 'inactive' : (isHealthy ? 'healthy' : 'degraded');
-                const statusText = !provider.isActive ? 'Inactive' : (isHealthy ? 'Healthy' : 'Degraded');
+                const statusKey = provider.id !== undefined ? String(provider.id) : provider.name;
+                const providerEthStatus = ethStatusMap.get(statusKey);
+                const providerArbStatus = arbStatusMap.get(statusKey);
+
+                const supportsEthereum = true;
+                const supportsArbitrum = Boolean((provider.arbitrumUrl || '').trim());
+
+                const statusLabels = [];
+                let degraded = false;
+                let hasHealthy = false;
+                let hasAnyActiveChain = false;
+
+                if (supportsEthereum) {
+                  hasAnyActiveChain = true;
+                  if (providerEthStatus?.isHealthy === false) degraded = true;
+                  if (providerEthStatus?.isHealthy === true) hasHealthy = true;
+                  statusLabels.push(`ETH ${providerEthStatus ? (providerEthStatus.isHealthy ? 'OK' : 'Degraded') : 'No Data'}`);
+                }
+                if (supportsArbitrum) {
+                  hasAnyActiveChain = true;
+                  if (providerArbStatus?.isHealthy === false) degraded = true;
+                  if (providerArbStatus?.isHealthy === true) hasHealthy = true;
+                  statusLabels.push(`ARB ${providerArbStatus ? (providerArbStatus.isHealthy ? 'OK' : 'Degraded') : 'No Data'}`);
+                }
+
+                const statusClass = !provider.isActive
+                  ? 'inactive'
+                  : degraded
+                    ? 'degraded'
+                    : hasHealthy
+                      ? 'healthy'
+                      : 'inactive';
+                const statusText = !provider.isActive
+                  ? 'Inactive'
+                  : !hasAnyActiveChain
+                    ? 'No Chains'
+                    : degraded
+                      ? 'Degraded'
+                      : hasHealthy
+                        ? 'Healthy'
+                        : 'No Data';
 
                 const callsPerDay = provider.callsPerDay
                   ? provider.callsPerDay.toLocaleString()
                   : 'Unlimited';
 
-                let metricsHtml = '<span style="color: var(--text-dim); font-size: 0.875rem;">No data</span>';
-
-                if (providerStatus && provider.isActive) {
-                  metricsHtml = `
-                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                      <div class="metric">
-                        <strong>Tokens:</strong> ${providerStatus.availableTokens.toFixed(1)}/${provider.callsPerSecond * 2}
-                      </div>
-                      <div class="metric">
-                        <strong>Daily:</strong> ${providerStatus.dailyCallCount}/${callsPerDay}
-                      </div>
-                      ${providerStatus.consecutiveErrors > 0 ? `
-                        <div class="metric" style="color: var(--danger);">
-                          <strong>Errors:</strong> ${providerStatus.consecutiveErrors}
-                        </div>
-                      ` : ''}
+                const renderChainMetrics = (label, chainStatus, enabled) => {
+                  if (!enabled) {
+                    return `<div class="metric" style="opacity:0.55;"><strong>${label}:</strong> Disabled</div>`;
+                  }
+                  if (!provider.isActive) {
+                    return `<div class="metric"><strong>${label}:</strong> Inactive</div>`;
+                  }
+                  if (!chainStatus) {
+                    return `<div class="metric"><strong>${label}:</strong> No data</div>`;
+                  }
+                  return `
+                    <div class="metric">
+                      <strong>${label}:</strong>
+                      tokens ${chainStatus.availableTokens.toFixed(1)} |
+                      calls ${chainStatus.dailyCallCount}/${callsPerDay}
+                      ${chainStatus.consecutiveErrors > 0 ? ` | errors ${chainStatus.consecutiveErrors}` : ''}
                     </div>
                   `;
-                }
+                };
+
+                const metricsHtml = `
+                  <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                    ${renderChainMetrics('ETH', providerEthStatus, supportsEthereum)}
+                    ${renderChainMetrics('ARB', providerArbStatus, supportsArbitrum)}
+                  </div>
+                `;
 
                 return `
                   <tr>
                     <td style="font-weight: 500;">${provider.name}</td>
-                    <td>
+                    <td class="wrap-allowed">
                       <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${provider.url}">
-                        ${provider.url}
+                        ETH: ${provider.url}
                       </div>
+                      <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem;" title="${provider.arbitrumUrl || ''}">
+                        ARB: ${provider.arbitrumUrl || 'Not configured'}
+                      </div>
+                      <label style="display:block; margin-top:0.5rem; font-size:0.75rem; color:var(--text-dim);">
+                        Arbitrum URL
+                        <input class="compact-input" id="arburl-${provider.id}" type="url" placeholder="Optional" value="${provider.arbitrumUrl || ''}">
+                      </label>
                     </td>
                     <td>
-                      <div style="font-size: 0.875rem;">
-                        <div>${provider.callsPerSecond}/sec</div>
-                        <div style="color: var(--text-dim); font-size: 0.75rem;">${callsPerDay}/day</div>
+                      <div style="display:flex; flex-direction:column;">
+                        <span class="chain-badge ${supportsEthereum ? '' : 'dim'}">Ethereum</span>
+                        <span class="chain-badge ${supportsArbitrum ? '' : 'dim'}">Arbitrum</span>
                       </div>
-                    </td>
-                    <td style="text-align: center;">
-                      <span style="font-weight: 500;">${provider.priority}</span>
                     </td>
                     <td>
                       <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
@@ -635,7 +769,27 @@
                       </div>
                     </td>
                     <td>
+                      <div style="display:flex; flex-direction:column; gap:0.4rem;">
+                        <label style="font-size:0.75rem; color:var(--text-dim);">
+                          Calls/Sec
+                          <input class="compact-input" id="cps-${provider.id}" type="number" min="0.1" max="1000" step="0.1" value="${provider.callsPerSecond}">
+                        </label>
+                        <label style="font-size:0.75rem; color:var(--text-dim);">
+                          Calls/Day
+                          <input class="compact-input" id="cpd-${provider.id}" type="number" min="1" placeholder="Unlimited" value="${provider.callsPerDay || ''}">
+                        </label>
+                        <label style="font-size:0.75rem; color:var(--text-dim);">
+                          Priority
+                          <input class="compact-input" id="priority-${provider.id}" type="number" value="${provider.priority}">
+                        </label>
+                        <button class="btn-small" onclick="saveProviderTuning(${provider.id})">Save</button>
+                      </div>
+                    </td>
+                    <td>
                       <span class="provider-status ${statusClass}">${statusText}</span>
+                      <div style="margin-top:0.35rem; font-size:0.7rem; color:var(--text-dim);">
+                        ${statusLabels.join(' • ')}
+                      </div>
                     </td>
                     <td>${metricsHtml}</td>
                     <td>
@@ -675,6 +829,7 @@
       const provider = {
         name: document.getElementById('providerName').value.trim(),
         url: document.getElementById('providerUrl').value.trim(),
+        arbitrumUrl: document.getElementById('providerArbitrumUrl').value.trim() || undefined,
         callsPerSecond: parseFloat(document.getElementById('providerCallsPerSec').value),
         callsPerDay: document.getElementById('providerCallsPerDay').value
           ? parseInt(document.getElementById('providerCallsPerDay').value)
@@ -710,6 +865,8 @@
         event.target.reset();
         document.getElementById('providerCallsPerSec').value = '10';
         document.getElementById('providerPriority').value = '0';
+        document.getElementById('providerSupportsLargeScans').checked = true;
+        document.getElementById('providerSupportsENS').checked = true;
 
         // Reload providers table
         await loadProviders();
@@ -722,6 +879,58 @@
         statusEl.style.color = 'var(--danger)';
       } finally {
         submitBtn.disabled = false;
+      }
+    }
+
+    async function saveProviderTuning(providerId) {
+      const arbitrumUrlRaw = document.getElementById(`arburl-${providerId}`).value.trim();
+      const callsPerSecondRaw = document.getElementById(`cps-${providerId}`).value;
+      const callsPerDayRaw = document.getElementById(`cpd-${providerId}`).value.trim();
+      const priorityRaw = document.getElementById(`priority-${providerId}`).value;
+
+      const callsPerSecond = parseFloat(callsPerSecondRaw);
+      const priority = parseInt(priorityRaw, 10);
+
+      if (!Number.isFinite(callsPerSecond) || callsPerSecond <= 0 || callsPerSecond > 1000) {
+        alert('Calls/Second must be between 0.1 and 1000');
+        return;
+      }
+
+      if (!Number.isFinite(priority)) {
+        alert('Priority must be a valid number');
+        return;
+      }
+
+      let callsPerDay;
+      if (callsPerDayRaw.length > 0) {
+        callsPerDay = parseInt(callsPerDayRaw, 10);
+        if (!Number.isFinite(callsPerDay) || callsPerDay < 1) {
+          alert('Calls/Day must be empty (unlimited) or at least 1');
+          return;
+        }
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            arbitrumUrl: arbitrumUrlRaw.length > 0 ? arbitrumUrlRaw : null,
+            callsPerSecond,
+            callsPerDay,
+            priority,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update provider');
+        }
+
+        await loadProviders();
+      } catch (error) {
+        alert(`Failed to save provider tuning: ${error.message}`);
       }
     }
 

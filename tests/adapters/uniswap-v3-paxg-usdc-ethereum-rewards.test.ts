@@ -13,13 +13,15 @@ jest.mock('../../src/utils/config', () => ({
 }));
 
 jest.mock('../../src/utils/ethereum', () => ({
+  ETHEREUM_CHAIN_ID: 1,
   getContract: jest.fn(),
+  getProviderForChain: jest.fn(),
   toChecksumAddress: (a: string) => a,
   formatUnits: jest.fn(),
 }));
 
 import { getProtocolConfig, getStablePriceOverrides } from '../../src/utils/config';
-import { getContract, formatUnits } from '../../src/utils/ethereum';
+import { getContract, getProviderForChain, formatUnits } from '../../src/utils/ethereum';
 
 const CONFIG = {
   [PROTOCOL_KEY]: {
@@ -58,22 +60,12 @@ const POSITION: Position = {
 };
 
 describe('UniswapV3PaxgUsdcEthereumRewardsAdapter', () => {
-  const originalEthRpc = process.env.ETH_RPC_URL;
-
   beforeEach(() => {
-    process.env.ETH_RPC_URL = 'http://localhost:8545';
+    (getProviderForChain as jest.Mock).mockReturnValue({});
     (getProtocolConfig as jest.Mock).mockReturnValue(CONFIG);
     (getStablePriceOverrides as jest.Mock).mockReturnValue({ USDC: 1.0 });
     (formatUnits as jest.Mock).mockReturnValue('0');
     jest.clearAllMocks();
-  });
-
-  afterAll(() => {
-    if (originalEthRpc === undefined) {
-      delete process.env.ETH_RPC_URL;
-    } else {
-      process.env.ETH_RPC_URL = originalEthRpc;
-    }
   });
 
   it('discovers only matching PAXG/USDC positions and marks them as rewards-based', async () => {
@@ -81,7 +73,14 @@ describe('UniswapV3PaxgUsdcEthereumRewardsAdapter', () => {
       balanceOf: jest.fn().mockResolvedValue(2n),
       tokenOfOwnerByIndex: jest.fn().mockResolvedValueOnce(111n).mockResolvedValueOnce(222n),
       positions: jest.fn()
-        .mockResolvedValueOnce({ token0: PAXG, token1: USDC, fee: 3000n })
+        .mockResolvedValueOnce({
+          token0: PAXG,
+          token1: USDC,
+          fee: 3000n,
+          liquidity: 1n,
+          tokensOwed0: 0n,
+          tokensOwed1: 0n,
+        })
         .mockResolvedValueOnce({ token0: PAXG, token1: '0x0000000000000000000000000000000000000001', fee: 3000n }),
     };
     (getContract as jest.Mock).mockReturnValue(manager);
@@ -102,11 +101,45 @@ describe('UniswapV3PaxgUsdcEthereumRewardsAdapter', () => {
       rewardDecimals: 6,
       rewardTokenIndex: 1,
       chainId: 1,
+      allowZeroValueDiscovery: true,
     });
   });
 
-  it('returns empty discovery results when ETH_RPC_URL is missing', async () => {
-    delete process.env.ETH_RPC_URL;
+  it('skips fully exhausted matching NFTs during discovery', async () => {
+    const manager = {
+      balanceOf: jest.fn().mockResolvedValue(2n),
+      tokenOfOwnerByIndex: jest.fn().mockResolvedValueOnce(111n).mockResolvedValueOnce(112n),
+      positions: jest.fn()
+        .mockResolvedValueOnce({
+          token0: PAXG,
+          token1: USDC,
+          fee: 3000n,
+          liquidity: 0n,
+          tokensOwed0: 0n,
+          tokensOwed1: 0n,
+        })
+        .mockResolvedValueOnce({
+          token0: PAXG,
+          token1: USDC,
+          fee: 3000n,
+          liquidity: 1n,
+          tokensOwed0: 0n,
+          tokensOwed1: 0n,
+        }),
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3PaxgUsdcEthereumRewardsAdapter();
+    const discovered = await adapter.discover('0xabc0000000000000000000000000000000000000');
+
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]?.protocolPositionKey).toBe(`${POSITION_MANAGER}:112`);
+  });
+
+  it('returns empty discovery results when Ethereum provider is unavailable', async () => {
+    (getProviderForChain as jest.Mock).mockImplementation(() => {
+      throw new Error('provider unavailable');
+    });
 
     const adapter = new UniswapV3PaxgUsdcEthereumRewardsAdapter();
     const discovered = await adapter.discover('0xabc0000000000000000000000000000000000000');
@@ -199,11 +232,13 @@ describe('UniswapV3PaxgUsdcEthereumRewardsAdapter', () => {
     expect(manager.positions).not.toHaveBeenCalled();
   });
 
-  it('throws when ETH_RPC_URL is missing during value reads', async () => {
-    delete process.env.ETH_RPC_URL;
+  it('throws when Ethereum provider is unavailable during value reads', async () => {
+    (getProviderForChain as jest.Mock).mockImplementation(() => {
+      throw new Error('provider unavailable');
+    });
 
     const adapter = new UniswapV3PaxgUsdcEthereumRewardsAdapter();
 
-    await expect(adapter.readCurrentValue(POSITION)).rejects.toThrow('ETH_RPC_URL is required');
+    await expect(adapter.readCurrentValue(POSITION)).rejects.toThrow('Ethereum RPC provider is required');
   });
 });

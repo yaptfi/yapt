@@ -1,10 +1,19 @@
-import { ethers, Provider } from 'ethers';
+import { Provider } from 'ethers';
 import { BaseProtocolAdapter } from './base';
 import { Position } from '../types';
 import { getAbi, getProtocolConfig, getStablePriceOverrides } from '../utils/config';
-import { formatUnits, getContract, toChecksumAddress } from '../utils/ethereum';
-
-const ARBITRUM_CHAIN_ID = 42161;
+import {
+  ARBITRUM_CHAIN_ID,
+  formatUnits,
+  getContract,
+  getProviderForChain,
+  toChecksumAddress,
+} from '../utils/ethereum';
+import {
+  getUniswapV3PositionField,
+  getWalletUniswapV3Inventory,
+  RawUniswapV3PositionInfo,
+} from '../utils/uniswap-v3-inventory';
 const MAX_UINT128 = (2n ** 128n) - 1n;
 
 interface UniswapV3RewardsConfig {
@@ -68,17 +77,19 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
       return this.arbitrumProvider;
     }
 
-    const rpcUrl = process.env.ARBITRUM_RPC_URL;
-    if (!rpcUrl) {
+    try {
+      this.arbitrumProvider = getProviderForChain(ARBITRUM_CHAIN_ID);
+      return this.arbitrumProvider;
+    } catch {
       if (!this.warnedMissingRpc) {
-        console.warn(`[${this.protocolName}] ARBITRUM_RPC_URL is not set. Skipping adapter.`);
+        console.warn(
+          `[${this.protocolName}] No Arbitrum RPC provider configured. ` +
+          `Configure chain-capable providers in admin or set ARBITRUM_RPC_URL/ARBITRUM_RPC_URLS.`
+        );
         this.warnedMissingRpc = true;
       }
       return null;
     }
-
-    this.arbitrumProvider = new ethers.JsonRpcProvider(rpcUrl, ARBITRUM_CHAIN_ID);
-    return this.arbitrumProvider;
   }
 
   private getValidatedConfig(): UniswapV3RewardsConfig {
@@ -119,15 +130,13 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
     const positions: Partial<Position>[] = [];
 
     try {
-      const positionManagerAbi = getAbi('UniswapV3NonfungiblePositionManager');
-      const positionManager = getContract(
+      const inventory = await getWalletUniswapV3Inventory(
+        ARBITRUM_CHAIN_ID,
+        checksumAddress,
         config.positionManager,
-        positionManagerAbi,
         provider
-      ) as unknown as UniswapV3PositionManagerContract;
-
-      const ownedCount = BigInt(await positionManager.balanceOf(checksumAddress));
-      if (ownedCount === 0n) {
+      );
+      if (inventory.length === 0) {
         return positions;
       }
 
@@ -136,13 +145,10 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
       const expectedRewardToken = config.rewardToken.toLowerCase();
       const requiredFee = config.fee !== undefined ? BigInt(config.fee) : null;
 
-      for (let i = 0n; i < ownedCount; i++) {
-        const tokenId = BigInt(await positionManager.tokenOfOwnerByIndex(checksumAddress, i));
-        const positionInfo = await positionManager.positions(tokenId);
-
-        const token0 = (positionInfo.token0 as string).toLowerCase();
-        const token1 = (positionInfo.token1 as string).toLowerCase();
-        const fee = BigInt(positionInfo.fee);
+      for (const entry of inventory) {
+        const token0 = entry.token0.toLowerCase();
+        const token1 = entry.token1.toLowerCase();
+        const fee = entry.fee;
 
         const pairMatches =
           (token0 === expectedToken0 && token1 === expectedToken1) ||
@@ -160,12 +166,17 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
           continue;
         }
 
+        // Skip fully exhausted NFTs early to avoid unnecessary reward valuation calls.
+        if (entry.liquidity === 0n && entry.tokensOwed0 === 0n && entry.tokensOwed1 === 0n) {
+          continue;
+        }
+
         const rewardSymbol = expectedRewardToken === expectedToken0
           ? (config.currency0Symbol || config.baseAsset || 'USDT')
           : expectedRewardToken === expectedToken1
             ? (config.currency1Symbol || config.baseAsset || 'USDT')
             : (config.baseAsset || 'USDT');
-        const tokenIdString = tokenId.toString();
+        const tokenIdString = entry.tokenId.toString();
 
         positions.push({
           protocolPositionKey: this.createPositionKey(config.positionManager, tokenIdString),
@@ -182,6 +193,7 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
             rewardTokenIndex,
             feeTier: fee.toString(),
             chainId: ARBITRUM_CHAIN_ID,
+            allowZeroValueDiscovery: entry.liquidity > 0n,
           },
           isActive: true,
         });
@@ -196,7 +208,7 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
   async readCurrentValue(position: Position): Promise<number> {
     const provider = this.getArbitrumProvider();
     if (!provider) {
-      throw new Error(`[${this.protocolName}] ARBITRUM_RPC_URL is required to read position values`);
+      throw new Error(`[${this.protocolName}] Arbitrum RPC provider is required to read position values`);
     }
 
     const {
@@ -258,7 +270,7 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
   async isPositionClosed(position: Position): Promise<boolean> {
     const provider = this.getArbitrumProvider();
     if (!provider) {
-      throw new Error(`[${this.protocolName}] ARBITRUM_RPC_URL is required to verify position closure`);
+      throw new Error(`[${this.protocolName}] Arbitrum RPC provider is required to verify position closure`);
     }
 
     const { walletAddress, tokenId, positionManager } = position.metadata;
@@ -289,7 +301,11 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
     }
 
     const positionInfo = await contract.positions(tokenIdBigInt);
-    const liquidity = BigInt(positionInfo.liquidity ?? 0n);
+    const liquidity = BigInt((getUniswapV3PositionField(
+      positionInfo as unknown as RawUniswapV3PositionInfo,
+      7,
+      'liquidity'
+    ) ?? 0n) as bigint | number | string);
     if (liquidity > 0n) {
       return false;
     }
@@ -308,8 +324,16 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
     const amount1Raw = Array.isArray(collectResult) ? collectResult[1] : collectResult.amount1;
     const amount0 = BigInt(amount0Raw ?? 0n);
     const amount1 = BigInt(amount1Raw ?? 0n);
-    const owed0 = BigInt(positionInfo.tokensOwed0 ?? 0n);
-    const owed1 = BigInt(positionInfo.tokensOwed1 ?? 0n);
+    const owed0 = BigInt((getUniswapV3PositionField(
+      positionInfo as unknown as RawUniswapV3PositionInfo,
+      10,
+      'tokensOwed0'
+    ) ?? 0n) as bigint | number | string);
+    const owed1 = BigInt((getUniswapV3PositionField(
+      positionInfo as unknown as RawUniswapV3PositionInfo,
+      11,
+      'tokensOwed1'
+    ) ?? 0n) as bigint | number | string);
 
     return amount0 === 0n && amount1 === 0n && owed0 === 0n && owed1 === 0n;
   }

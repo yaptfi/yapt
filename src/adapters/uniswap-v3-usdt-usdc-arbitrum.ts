@@ -1,10 +1,19 @@
-import { ethers, Provider } from 'ethers';
+import { Provider } from 'ethers';
 import { BaseProtocolAdapter } from './base';
 import { Position } from '../types';
 import { getAbi, getProtocolConfig, getStablePriceOverrides } from '../utils/config';
-import { formatUnits, getContract, toChecksumAddress } from '../utils/ethereum';
-
-const ARBITRUM_CHAIN_ID = 42161;
+import {
+  ARBITRUM_CHAIN_ID,
+  formatUnits,
+  getContract,
+  getProviderForChain,
+  toChecksumAddress,
+} from '../utils/ethereum';
+import {
+  getUniswapV3PositionField,
+  getWalletUniswapV3Inventory,
+  RawUniswapV3PositionInfo,
+} from '../utils/uniswap-v3-inventory';
 const MAX_UINT128 = (2n ** 128n) - 1n;
 
 interface UniswapV3LpConfig {
@@ -65,22 +74,28 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
   private arbitrumProvider: Provider | null = null;
   private warnedMissingRpc = false;
 
+  private getPositionField(positionInfo: UniswapV3PositionInfo, index: number, key: keyof UniswapV3PositionInfo): unknown {
+    return getUniswapV3PositionField(positionInfo as unknown as RawUniswapV3PositionInfo, index, key);
+  }
+
   private getArbitrumProvider(): Provider | null {
     if (this.arbitrumProvider) {
       return this.arbitrumProvider;
     }
 
-    const rpcUrl = process.env.ARBITRUM_RPC_URL;
-    if (!rpcUrl) {
+    try {
+      this.arbitrumProvider = getProviderForChain(ARBITRUM_CHAIN_ID);
+      return this.arbitrumProvider;
+    } catch {
       if (!this.warnedMissingRpc) {
-        console.warn(`[${this.protocolName}] ARBITRUM_RPC_URL is not set. Skipping adapter.`);
+        console.warn(
+          `[${this.protocolName}] No Arbitrum RPC provider configured. ` +
+          `Configure chain-capable providers in admin or set ARBITRUM_RPC_URL/ARBITRUM_RPC_URLS.`
+        );
         this.warnedMissingRpc = true;
       }
       return null;
     }
-
-    this.arbitrumProvider = new ethers.JsonRpcProvider(rpcUrl, ARBITRUM_CHAIN_ID);
-    return this.arbitrumProvider;
   }
 
   private getValidatedConfig(): UniswapV3LpConfig {
@@ -120,27 +135,22 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
     const positions: Partial<Position>[] = [];
 
     try {
-      const positionManagerAbi = getAbi('UniswapV3NonfungiblePositionManager');
-      const positionManager = getContract(
+      const inventory = await getWalletUniswapV3Inventory(
+        ARBITRUM_CHAIN_ID,
+        checksumAddress,
         config.positionManager,
-        positionManagerAbi,
         provider
-      ) as unknown as UniswapV3PositionManagerContract;
-
-      const ownedCount = BigInt(await positionManager.balanceOf(checksumAddress));
-      if (ownedCount === 0n) {
+      );
+      if (inventory.length === 0) {
         return positions;
       }
 
       const expectedToken0 = config.currency0.toLowerCase();
       const expectedToken1 = config.currency1.toLowerCase();
 
-      for (let i = 0n; i < ownedCount; i++) {
-        const tokenId = BigInt(await positionManager.tokenOfOwnerByIndex(checksumAddress, i));
-        const positionInfo = await positionManager.positions(tokenId);
-
-        const token0 = (positionInfo.token0 as string).toLowerCase();
-        const token1 = (positionInfo.token1 as string).toLowerCase();
+      for (const entry of inventory) {
+        const token0 = entry.token0.toLowerCase();
+        const token1 = entry.token1.toLowerCase();
 
         const pairMatches =
           (token0 === expectedToken0 && token1 === expectedToken1) ||
@@ -149,7 +159,7 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
           continue;
         }
 
-        const tokenIdString = tokenId.toString();
+        const tokenIdString = entry.tokenId.toString();
 
         positions.push({
           protocolPositionKey: this.createPositionKey(config.positionManager, tokenIdString),
@@ -181,7 +191,7 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
   async readCurrentValue(position: Position): Promise<number> {
     const provider = this.getArbitrumProvider();
     if (!provider) {
-      throw new Error(`[${this.protocolName}] ARBITRUM_RPC_URL is required to read position values`);
+      throw new Error(`[${this.protocolName}] Arbitrum RPC provider is required to read position values`);
     }
 
     const {
@@ -222,9 +232,9 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
 
     // Get current position state (liquidity + ticks)
     const positionInfo = await contract.positions(tokenIdBigInt);
-    const liquidity = BigInt(positionInfo.liquidity);
-    const tickLower = Number(positionInfo.tickLower);
-    const tickUpper = Number(positionInfo.tickUpper);
+    const liquidity = BigInt((this.getPositionField(positionInfo, 7, 'liquidity') ?? 0n) as bigint | number | string);
+    const tickLower = Number(this.getPositionField(positionInfo, 5, 'tickLower') ?? 0);
+    const tickUpper = Number(this.getPositionField(positionInfo, 6, 'tickUpper') ?? 0);
 
     // Get uncollected fees via staticCall
     const collectResult = await contract.collect.staticCall(collectParams, { from: checksumAddress });

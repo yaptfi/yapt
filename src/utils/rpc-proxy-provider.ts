@@ -62,12 +62,18 @@ export class RPCProxyProvider extends JsonRpcProvider {
  */
 export function createManagedProvider(
   configs: Array<{
+    id?: number;
     name: string;
     url: string;
+    arbitrumUrl?: string;
     callsPerSecond: number;
     callsPerDay?: number;
     priority: number;
     isActive: boolean;
+    supportsEthereum?: boolean;
+    supportsArbitrum?: boolean;
+    supportsLargeBlockScans?: boolean;
+    supportsENS?: boolean;
   }>,
   options?: {
     network?: Network;

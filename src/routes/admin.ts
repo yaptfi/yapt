@@ -151,6 +151,7 @@ export default async function adminRoutes(server: FastifyInstance) {
     Body: {
       name: string;
       url: string;
+      arbitrumUrl?: string;
       callsPerSecond: number;
       callsPerDay?: number;
       priority: number;
@@ -159,7 +160,17 @@ export default async function adminRoutes(server: FastifyInstance) {
       supportsENS?: boolean;
     };
   }>('/rpc-providers', { preHandler: requireAdmin }, async (request, reply) => {
-    const { name, url, callsPerSecond, callsPerDay, priority, isActive, supportsLargeBlockScans, supportsENS } = request.body;
+    const {
+      name,
+      url,
+      arbitrumUrl,
+      callsPerSecond,
+      callsPerDay,
+      priority,
+      isActive,
+      supportsLargeBlockScans,
+      supportsENS,
+    } = request.body;
 
     // Validate inputs
     if (!name || !url || callsPerSecond === undefined || priority === undefined) {
@@ -170,14 +181,23 @@ export default async function adminRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: 'callsPerSecond must be between 0 and 1000' });
     }
 
+    if (callsPerDay !== undefined && callsPerDay !== null && (!Number.isFinite(callsPerDay) || callsPerDay < 1)) {
+      return reply.code(400).send({ error: 'callsPerDay must be at least 1 when provided' });
+    }
+
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       return reply.code(400).send({ error: 'url must start with http:// or https://' });
+    }
+
+    if (arbitrumUrl && !arbitrumUrl.startsWith('http://') && !arbitrumUrl.startsWith('https://')) {
+      return reply.code(400).send({ error: 'arbitrumUrl must start with http:// or https://' });
     }
 
     try {
       const provider = await createRPCProvider({
         name,
         url,
+        arbitrumUrl,
         callsPerSecond,
         callsPerDay,
         priority,
@@ -207,6 +227,7 @@ export default async function adminRoutes(server: FastifyInstance) {
     Body: {
       name?: string;
       url?: string;
+      arbitrumUrl?: string | null;
       callsPerSecond?: number;
       callsPerDay?: number;
       priority?: number;
@@ -229,11 +250,32 @@ export default async function adminRoutes(server: FastifyInstance) {
       return reply.code(400).send({ error: 'callsPerSecond must be between 0 and 1000' });
     }
 
+    if (
+      updates.callsPerDay !== undefined &&
+      updates.callsPerDay !== null &&
+      (!Number.isFinite(updates.callsPerDay) || updates.callsPerDay < 1)
+    ) {
+      return reply.code(400).send({ error: 'callsPerDay must be at least 1 when provided' });
+    }
+
     if (updates.url && !updates.url.startsWith('http://') && !updates.url.startsWith('https://')) {
       return reply.code(400).send({ error: 'url must start with http:// or https://' });
     }
 
+    if (
+      updates.arbitrumUrl !== undefined &&
+      updates.arbitrumUrl !== null &&
+      updates.arbitrumUrl !== '' &&
+      !updates.arbitrumUrl.startsWith('http://') &&
+      !updates.arbitrumUrl.startsWith('https://')
+    ) {
+      return reply.code(400).send({ error: 'arbitrumUrl must start with http:// or https://' });
+    }
+
     try {
+      if (updates.arbitrumUrl === '') {
+        updates.arbitrumUrl = null;
+      }
       const provider = await updateRPCProvider(providerId, updates);
 
       if (!provider) {
