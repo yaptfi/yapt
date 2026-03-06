@@ -6,13 +6,27 @@
  */
 
 // Mocks must be declared before any imports that reference them.
+const mockGetAllWallets = jest.fn();
+const mockGetTrackedWallets = jest.fn();
+const mockGetWalletById = jest.fn();
 const mockGetPositionsByWallet = jest.fn();
 const mockUpdateWallet = jest.fn();
+const mockDiscoverPositions = jest.fn();
+const mockCleanupUntrackedWallets = jest.fn();
 const mockCheckAndSendNotifications = jest.fn();
+const mockBullmqState = {
+  add: jest.fn(),
+  getRepeatableJobs: jest.fn().mockResolvedValue([]),
+  queueClose: jest.fn(),
+  workerOn: jest.fn(),
+  workerClose: jest.fn(),
+  processor: null as null | ((job: { id?: string; name: string; data?: unknown }) => Promise<void>),
+};
 
 jest.mock('../../src/models/wallet', () => ({
-  getAllWallets: jest.fn(),
-  getWalletById: jest.fn(),
+  getAllWallets: mockGetAllWallets,
+  getTrackedWallets: mockGetTrackedWallets,
+  getWalletById: mockGetWalletById,
 }));
 
 jest.mock('../../src/models/position', () => ({
@@ -24,11 +38,11 @@ jest.mock('../../src/services/update', () => ({
 }));
 
 jest.mock('../../src/services/discovery', () => ({
-  discoverPositions: jest.fn(),
+  discoverPositions: mockDiscoverPositions,
 }));
 
 jest.mock('../../src/services/cleanup', () => ({
-  cleanupUntrackedWallets: jest.fn(),
+  cleanupUntrackedWallets: mockCleanupUntrackedWallets,
 }));
 
 jest.mock('../../src/services/notificationChecker', () => ({
@@ -41,14 +55,17 @@ jest.mock('../../src/utils/config', () => ({
 
 jest.mock('bullmq', () => ({
   Queue: jest.fn().mockImplementation(() => ({
-    add: jest.fn(),
-    getRepeatableJobs: jest.fn().mockResolvedValue([]),
-    close: jest.fn(),
+    add: mockBullmqState.add,
+    getRepeatableJobs: mockBullmqState.getRepeatableJobs,
+    close: mockBullmqState.queueClose,
   })),
-  Worker: jest.fn().mockImplementation(() => ({
-    on: jest.fn(),
-    close: jest.fn(),
-  })),
+  Worker: jest.fn().mockImplementation((_queueName, processor) => {
+    mockBullmqState.processor = processor;
+    return {
+      on: mockBullmqState.workerOn,
+      close: mockBullmqState.workerClose,
+    };
+  }),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -66,7 +83,19 @@ describe('processWalletsSequentially', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetAllWallets.mockReset();
+    mockGetTrackedWallets.mockReset();
+    mockGetWalletById.mockReset();
     mockGetPositionsByWallet.mockResolvedValue([]);
+    mockDiscoverPositions.mockReset();
+    mockCleanupUntrackedWallets.mockReset();
+    mockBullmqState.add.mockReset();
+    mockBullmqState.getRepeatableJobs.mockReset();
+    mockBullmqState.getRepeatableJobs.mockResolvedValue([]);
+    mockBullmqState.queueClose.mockReset();
+    mockBullmqState.workerOn.mockReset();
+    mockBullmqState.workerClose.mockReset();
+    mockBullmqState.processor = null;
   });
 
   afterEach(() => {
@@ -119,5 +148,53 @@ describe('processWalletsSequentially', () => {
     const promise = processWalletsSequentially(WALLETS);
     await jest.runAllTimersAsync();
     await expect(promise).resolves.toBeUndefined();
+  });
+});
+
+describe('weekly cleanup job', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockBullmqState.add.mockReset();
+    mockBullmqState.getRepeatableJobs.mockReset();
+    mockBullmqState.getRepeatableJobs.mockResolvedValue([]);
+    mockBullmqState.processor = null;
+    mockCleanupUntrackedWallets.mockReset();
+    mockGetTrackedWallets.mockReset();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it('queues discovery for tracked wallets after weekly cleanup', async () => {
+    const initializeScheduler = schedulerModule['initializeScheduler'] as () => Promise<void>;
+
+    mockCleanupUntrackedWallets.mockResolvedValue({
+      deletedWallets: 1,
+      deletedPositions: 2,
+      deletedSnapshots: 3,
+    });
+    mockGetTrackedWallets.mockResolvedValue([
+      { id: 'wallet-1', address: '0x1' },
+      { id: 'wallet-3', address: '0x3' },
+    ]);
+
+    await initializeScheduler();
+    mockBullmqState.add.mockClear();
+
+    expect(mockBullmqState.processor).not.toBeNull();
+
+    await mockBullmqState.processor!({
+      id: 'job-weekly-cleanup',
+      name: 'cleanup-untracked-wallets',
+      data: {},
+    });
+
+    expect(mockCleanupUntrackedWallets).toHaveBeenCalledTimes(1);
+    expect(mockGetTrackedWallets).toHaveBeenCalledTimes(1);
+    expect(mockBullmqState.add).toHaveBeenNthCalledWith(1, 'discover-wallet', { walletId: 'wallet-1' });
+    expect(mockBullmqState.add).toHaveBeenNthCalledWith(2, 'discover-wallet', { walletId: 'wallet-3' });
+    expect(mockBullmqState.add).toHaveBeenCalledTimes(2);
   });
 });

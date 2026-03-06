@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq';
-import { getAllWallets, getWalletById } from '../models/wallet';
+import { getAllWallets, getTrackedWallets, getWalletById } from '../models/wallet';
 import { getPositionsByWallet } from '../models/position';
 import { updateWallet } from '../services/update';
 import { getEnvVar } from '../utils/config';
@@ -28,6 +28,17 @@ export async function processWalletsSequentially(wallets: Wallet[]): Promise<voi
     if (i < wallets.length - 1) {
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
+  }
+}
+
+async function queueWalletDiscoveries(wallets: Wallet[]): Promise<void> {
+  if (!updateQueue) {
+    throw new Error('Queue not initialized');
+  }
+
+  console.log(`Discovering positions for ${wallets.length} wallets...`);
+  for (const wallet of wallets) {
+    await updateQueue.add('discover-wallet', { walletId: wallet.id });
   }
 }
 
@@ -70,13 +81,13 @@ export async function initializeScheduler(): Promise<void> {
         await discoverPositions(wallet.id, wallet.address);
       } else if (job.name === 'discover-all-wallets') {
         const wallets = await getAllWallets();
-        console.log(`Discovering positions for ${wallets.length} wallets...`);
-        for (const wallet of wallets) {
-          await updateQueue!.add('discover-wallet', { walletId: wallet.id });
-        }
+        await queueWalletDiscoveries(wallets);
       } else if (job.name === 'cleanup-untracked-wallets') {
-        console.log('[scheduler] running weekly cleanup of untracked wallets');
+        console.log('[scheduler] running weekly cleanup of untracked wallets and queued discovery for tracked wallets');
         await cleanupUntrackedWallets();
+        const trackedWallets = await getTrackedWallets();
+        console.log(`[scheduler] cleanup complete; queueing discovery for ${trackedWallets.length} tracked wallet(s)`);
+        await queueWalletDiscoveries(trackedWallets);
       }
     },
     {
@@ -97,7 +108,7 @@ export async function initializeScheduler(): Promise<void> {
 
   // Schedule hourly updates
   await scheduleHourlyUpdates();
-  // Schedule weekly cleanup of untracked wallets (Sunday 02:00 UTC)
+  // Schedule weekly cleanup of untracked wallets, then discovery for tracked wallets (Sunday 02:00 UTC)
   await scheduleWeeklyCleanup();
 
   console.log('Scheduler initialized');
@@ -133,7 +144,7 @@ async function scheduleHourlyUpdates(): Promise<void> {
 }
 
 /**
- * Schedule weekly cleanup of untracked wallets
+ * Schedule weekly cleanup of untracked wallets, then discovery for tracked wallets
  * Runs every Sunday at 02:00 UTC
  */
 async function scheduleWeeklyCleanup(): Promise<void> {
@@ -146,7 +157,10 @@ async function scheduleWeeklyCleanup(): Promise<void> {
     const repeats = await updateQueue.getRepeatableJobs();
     const existing = repeats.find((r) => r.name === 'cleanup-untracked-wallets' && r.id === 'cleanup-untracked-wallets-weekly');
     if (existing) {
-      console.log(`[scheduler] weekly cleanup already scheduled: ${(existing as any).pattern || (existing as any).cron || 'set'}`);
+      const existingSchedule = (existing as { pattern?: string; cron?: string }).pattern
+        || (existing as { pattern?: string; cron?: string }).cron
+        || 'set';
+      console.log(`[scheduler] weekly cleanup already scheduled: ${existingSchedule}`);
       return;
     }
   } catch {

@@ -31,6 +31,19 @@ export async function getAllWallets(): Promise<Wallet[]> {
   );
 }
 
+export async function getTrackedWallets(): Promise<Wallet[]> {
+  return query<Wallet>(
+    `SELECT DISTINCT
+      w.id,
+      w.address,
+      w.ens_name as "ensName",
+      w.created_at as "createdAt"
+     FROM wallet w
+     JOIN user_wallet uw ON w.id = uw.wallet_id
+     ORDER BY w.created_at DESC`
+  );
+}
+
 export async function getWalletById(id: string): Promise<Wallet | null> {
   return queryOne<Wallet>(
     `SELECT

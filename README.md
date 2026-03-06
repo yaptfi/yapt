@@ -120,6 +120,7 @@ See `CLAUDE.md` for detailed development setup and architecture documentation.
 
 ### Updates
 - **Hourly**: BullMQ job updates all positions every hour
+- **Weekly**: Sunday cleanup removes untracked wallets, then queues discovery for the remaining tracked wallets
 - **Manual**: Refresh button available (rate-limited to once per 5 minutes)
 - **APY Calculation**: Two-point method with deposit/withdrawal correction
 - **Income Projections**: Calculated on-demand from current APY
@@ -145,7 +146,7 @@ See `CLAUDE.md` for detailed development setup and architecture documentation.
 ```
 src/
 ├── adapters/       # Protocol-specific logic
-├── jobs/           # Hourly update scheduler
+├── jobs/           # Scheduler for hourly updates and weekly cleanup/discovery
 ├── models/         # Database operations
 ├── routes/         # REST API endpoints
 ├── services/       # Business logic

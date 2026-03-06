@@ -87,7 +87,7 @@ Positions have three semantic categories, derived at the service layer from the 
 - Queue: `position-updates` (`src/jobs/scheduler.ts`).
 - Worker concurrency is intentionally `1` (sequential wallet processing).
 - Hourly update job is scheduled at `UPDATE_CRON_MINUTE` (default `38`), not necessarily minute `0`.
-- Weekly cleanup runs Sunday 02:00 UTC.
+- Weekly job runs Sunday 02:00 UTC: it deletes untracked wallets, then queues discovery for the remaining tracked wallets.
 - Discovery and update logic treat sub-$10 positions as dust/exit cases.
 - Flow detection scans are removed in current update path; APY is snapshot-based and reset-aware.
 - `measureMethod: 'rewards'` positions hide APY fields and use absolute yield projections.
