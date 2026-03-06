@@ -1,7 +1,5 @@
 import { query, queryOne, withTransaction, queryOnClient, queryOneOnClient } from '../utils/db';
 import { Position, CountingMode } from '../types';
-import { getProtocolConfig } from '../utils/config';
-import { getLoadedPlugins } from '../plugins/registry';
 
 const POSITION_SELECT = `
   p.id,
@@ -19,53 +17,19 @@ const POSITION_SELECT = `
   pr.key as protocol_key,
   pr.name as protocol_name`;
 
-function resolveProtocolName(protocolKey: string): string | null {
-  const configuredName = getProtocolConfig()[protocolKey]?.name;
-  if (configuredName) {
-    return configuredName;
-  }
-
-  const loadedPlugin = getLoadedPlugins().find((plugin) => plugin.key === protocolKey);
-  return loadedPlugin?.name ?? null;
-}
-
-async function getOrCreateProtocolId(protocolKey: string): Promise<string> {
-  const existing = await queryOne<{ id: string }>(
-    'SELECT id FROM protocol WHERE key = $1',
-    [protocolKey]
-  );
-
-  if (existing) {
-    return existing.id;
-  }
-
-  const protocolName = resolveProtocolName(protocolKey);
-  if (!protocolName) {
-    throw new Error(`Protocol not found: ${protocolKey}`);
-  }
-
-  const created = await queryOne<{ id: string }>(
-    `INSERT INTO protocol (key, name)
-     VALUES ($1, $2)
-     ON CONFLICT (key)
-     DO UPDATE SET name = EXCLUDED.name
-     RETURNING id`,
-    [protocolKey, protocolName]
-  );
-
-  if (!created) {
-    throw new Error(`Failed to create protocol: ${protocolKey}`);
-  }
-
-  return created.id;
-}
-
 export async function createPosition(
   walletId: string,
   protocolKey: string,
   positionData: Partial<Position>
 ): Promise<Position> {
-  const protocolId = await getOrCreateProtocolId(protocolKey);
+  const protocol = await queryOne<{ id: string }>(
+    'SELECT id FROM protocol WHERE key = $1',
+    [protocolKey]
+  );
+
+  if (!protocol) {
+    throw new Error(`Protocol not found: ${protocolKey}`);
+  }
 
   // Get stablecoin ID from symbol (baseAsset)
   const stablecoin = await queryOne<{ id: string }>(
@@ -107,7 +71,7 @@ export async function createPosition(
       created_at as "createdAt"`,
     [
       walletId,
-      protocolId,
+      protocol.id,
       positionData.protocolPositionKey,
       positionData.displayName,
       positionData.baseAsset,

@@ -16,9 +16,10 @@ const { getActiveRPCProvidersForChain } = require('../dist/models/rpc-provider.j
 
 const DEFAULT_URL = 'https://app.uniswap.org/positions/v4/arbitrum/146749';
 const DEFAULT_PROTOCOL_KEY = 'uniswap-v4-wbtc-usdc-rewards';
+// Keep these defaults aligned with config/protocols.json.
 const OFFICIAL_ARBITRUM_V4 = {
   positionManager: '0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869',
-  stateView: '0x182a927119D56008d921126764bF884221b10f59',
+  stateView: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
   poolManager: '0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32',
   currency0: '0x2f2a2543B76A4166549F7aab2e75Bef0aefC5B0f',
   currency1: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',

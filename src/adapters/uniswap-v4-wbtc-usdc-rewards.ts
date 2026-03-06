@@ -18,6 +18,21 @@ const PROTOCOL_KEY = 'uniswap-v4-wbtc-usdc-rewards';
 const PROTOCOL_NAME = 'Uniswap v4 WBTC/USDC';
 const Q128 = 2n ** 128n;
 
+interface UniswapV4StateViewContract {
+  getPositionInfo(
+    poolId: string,
+    owner: string,
+    tickLower: number,
+    tickUpper: number,
+    salt: string
+  ): Promise<[bigint, bigint, bigint]>;
+  getFeeGrowthInside(poolId: string, tickLower: number, tickUpper: number): Promise<[bigint, bigint]>;
+}
+
+interface UniswapV4PositionManagerContract {
+  ownerOf(tokenId: bigint): Promise<string>;
+}
+
 /**
  * Uniswap v4 WBTC/USDC rewards-only adapter.
  *
@@ -110,6 +125,52 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
     return fallbackChainId;
   }
 
+  private getPositionSalt(tokenId: string): string {
+    return ethers.zeroPadValue(ethers.toBeHex(BigInt(tokenId)), 32);
+  }
+
+  private getStateViewContract(stateView: string, provider: Provider): UniswapV4StateViewContract {
+    const normalizedStateView = normalizeAddress(stateView);
+    const stateViewAbi = getAbi('UniswapV4StateView');
+    return getContract(normalizedStateView, stateViewAbi, provider) as unknown as UniswapV4StateViewContract;
+  }
+
+  private getPositionManagerContract(positionManager: string, provider: Provider): UniswapV4PositionManagerContract {
+    const normalizedPositionManager = normalizeAddress(positionManager);
+    const positionManagerAbi = getAbi('UniswapV4PositionManager');
+    return getContract(normalizedPositionManager, positionManagerAbi, provider) as unknown as UniswapV4PositionManagerContract;
+  }
+
+  private async getPositionInfo(
+    provider: Provider,
+    stateView: string,
+    positionManager: string,
+    poolId: string,
+    tickLower: number,
+    tickUpper: number,
+    tokenId: string
+  ): Promise<{
+    liquidity: bigint;
+    feeGrowthInside0LastX128: bigint;
+    feeGrowthInside1LastX128: bigint;
+  }> {
+    const stateViewContract = this.getStateViewContract(stateView, provider);
+    const normalizedPositionManager = normalizeAddress(positionManager);
+    const [liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128] = await stateViewContract.getPositionInfo(
+      poolId,
+      normalizedPositionManager,
+      tickLower,
+      tickUpper,
+      this.getPositionSalt(tokenId)
+    );
+
+    return {
+      liquidity: BigInt(liquidity),
+      feeGrowthInside0LastX128: BigInt(feeGrowthInside0LastX128),
+      feeGrowthInside1LastX128: BigInt(feeGrowthInside1LastX128),
+    };
+  }
+
   /**
    * Discover Uniswap v4 WBTC/USDC positions.
    * Uses shared inventory cache — does not issue duplicate eth_getLogs when
@@ -158,6 +219,28 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
           continue;
         }
 
+        let liquidity: bigint;
+        try {
+          ({ liquidity } = await this.getPositionInfo(
+            scanProvider,
+            config.stateView,
+            config.positionManager,
+            entry.poolId,
+            entry.tickLower,
+            entry.tickUpper,
+            entry.tokenId
+          ));
+        } catch (error) {
+          console.warn(`[${PROTOCOL_NAME}] Failed to inspect token ${entry.tokenId} during discovery:`, error);
+          continue;
+        }
+
+        // Rewards-only positions need a live LP position to accrue claimable fees.
+        // Skip empty shells so discovery does not create permanent $0 positions.
+        if (liquidity === 0n) {
+          continue;
+        }
+
         const rewardTokenIndex = currency0Lower === rewardTokenAddress ? 0 : 1;
         const rewardDecimals = rewardTokenIndex === 0 ? (config.currency0Decimals ?? 6) : (config.currency1Decimals ?? 6);
 
@@ -183,7 +266,7 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
             fee: entry.poolKey.fee.toString(),
             tickSpacing: entry.poolKey.tickSpacing.toString(),
             hooks: entry.poolKey.hooks,
-            // Rewards-only positions can legitimately have zero claimable fees at discovery time.
+            // Rewards-only positions can legitimately have zero claimable fees while liquidity remains.
             allowZeroValueDiscovery: true,
           },
           isActive: true,
@@ -232,28 +315,36 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
       throw new Error(`Invalid ${PROTOCOL_KEY} position metadata`);
     }
 
-    const normalizedStateView = normalizeAddress(stateView);
-    const normalizedPositionManager = normalizeAddress(positionManager);
-    const stateViewAbi = getAbi('UniswapV4StateView');
-    const stateViewContract = getContract(normalizedStateView, stateViewAbi, provider);
+    const index = Number(rewardTokenIndex);
+    if (index !== 0 && index !== 1) {
+      throw new Error(`Invalid rewardTokenIndex for ${PROTOCOL_KEY}: ${rewardTokenIndex}`);
+    }
 
-    const salt = ethers.zeroPadValue(ethers.toBeHex(BigInt(tokenId)), 32);
-
-    // Query using Position Manager as the owner (v4 pattern)
-    const [liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128] =
-      await stateViewContract.getPositionInfo(poolId, normalizedPositionManager, tickLower, tickUpper, salt);
+    const {
+      liquidity,
+      feeGrowthInside0LastX128,
+      feeGrowthInside1LastX128,
+    } = await this.getPositionInfo(
+      provider,
+      stateView,
+      positionManager,
+      poolId,
+      tickLower,
+      tickUpper,
+      tokenId
+    );
 
     if (liquidity === 0n) {
       return 0;
     }
 
+    const stateViewContract = this.getStateViewContract(stateView, provider);
     const [feeGrowthInside0X128, feeGrowthInside1X128] = await stateViewContract.getFeeGrowthInside(
       poolId,
       tickLower,
       tickUpper
     );
 
-    const index = Number(rewardTokenIndex);
     const feeGrowthDelta = index === 0
       ? BigInt(feeGrowthInside0X128) - BigInt(feeGrowthInside0LastX128)
       : BigInt(feeGrowthInside1X128) - BigInt(feeGrowthInside1LastX128);
@@ -264,5 +355,62 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
     const rewardPriceUsd = this.getStablePrice(position.baseAsset, stablePriceOverrides);
 
     return rewardAmount * rewardPriceUsd;
+  }
+
+  async isPositionClosed(position: Position): Promise<boolean> {
+    const config = this.getValidatedConfig();
+    const chainId = this.resolveChainId(position.metadata.chainId, config.chainId);
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      throw new Error(`[${this.protocolName}] ${this.getChainLabel(chainId)} RPC provider is required to verify position closure`);
+    }
+
+    const {
+      walletAddress,
+      tokenId,
+      stateView,
+      poolId,
+      tickLower,
+      tickUpper,
+      positionManager,
+    } = position.metadata;
+
+    if (
+      !walletAddress ||
+      !tokenId ||
+      !stateView ||
+      !poolId ||
+      tickLower === undefined ||
+      tickUpper === undefined ||
+      !positionManager
+    ) {
+      throw new Error(`Invalid ${PROTOCOL_KEY} position metadata for closure detection`);
+    }
+
+    const checksumAddress = toChecksumAddress(walletAddress);
+    const positionManagerContract = this.getPositionManagerContract(positionManager, provider);
+
+    let owner: string;
+    try {
+      owner = await positionManagerContract.ownerOf(BigInt(tokenId));
+    } catch {
+      return true;
+    }
+
+    if (owner.toLowerCase() !== checksumAddress.toLowerCase()) {
+      return true;
+    }
+
+    const { liquidity } = await this.getPositionInfo(
+      provider,
+      stateView,
+      positionManager,
+      poolId,
+      tickLower,
+      tickUpper,
+      tokenId
+    );
+
+    return liquidity === 0n;
   }
 }
