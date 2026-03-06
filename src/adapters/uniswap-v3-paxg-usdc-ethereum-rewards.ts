@@ -69,17 +69,11 @@ export class UniswapV3PaxgUsdcEthereumRewardsAdapter extends BaseProtocolAdapter
   readonly protocolKey = 'uniswap-v3-paxg-usdc-ethereum-rewards' as const;
   readonly protocolName = 'Uniswap v3 PAXG/USDC (Ethereum)';
 
-  private ethereumProvider: Provider | null = null;
   private warnedMissingRpc = false;
 
   private getEthereumProvider(): Provider | null {
-    if (this.ethereumProvider) {
-      return this.ethereumProvider;
-    }
-
     try {
-      this.ethereumProvider = getProviderForChain(ETHEREUM_CHAIN_ID);
-      return this.ethereumProvider;
+      return getProviderForChain(ETHEREUM_CHAIN_ID);
     } catch {
       if (!this.warnedMissingRpc) {
         console.warn(

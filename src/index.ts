@@ -39,6 +39,7 @@ const HTTPS_KEY = getEnvVar('HTTPS_KEY', '');
 // Fastify server options
 const LOG_LEVEL = getEnvVar('LOG_LEVEL', process.env.NODE_ENV === 'production' ? 'warn' : 'info');
 const serverOptions: any = {
+  disableRequestLogging: true,
   logger: {
     level: LOG_LEVEL,
     transport: {
@@ -245,13 +246,11 @@ async function start() {
 
                   // If it returns a promise, add timeout
                   if (result && typeof result.then === 'function') {
-                    // Log command details
                     const logArgs = args.slice(0, 3).map((arg: any) => {
                       if (typeof arg === 'string' && arg.length > 100) return arg.slice(0, 100) + '...';
                       if (typeof arg === 'object') return '[object]';
                       return arg;
                     });
-                    server.log.info({ command, args: logArgs }, `Redis ${command} called`);
 
                     let timeoutHandle: NodeJS.Timeout | undefined;
                     const timeoutPromise = new Promise((_, reject) => {

@@ -1,7 +1,16 @@
-import { ethers } from 'ethers';
+import { ethers, Provider } from 'ethers';
 import { BaseProtocolAdapter } from './base';
 import { Position } from '../types';
-import { getContract, toChecksumAddress, formatUnits } from '../utils/ethereum';
+import {
+  ARBITRUM_CHAIN_ID,
+  ETHEREUM_CHAIN_ID,
+  formatUnits,
+  getContract,
+  getProviderForChain,
+  getScanCapableProviderForChain,
+  normalizeAddress,
+  toChecksumAddress,
+} from '../utils/ethereum';
 import { getProtocolConfig, getAbi, getStablePriceOverrides } from '../utils/config';
 import { getWalletUniswapV4Inventory } from '../utils/uniswap-v4-inventory';
 
@@ -22,6 +31,7 @@ const Q128 = 2n ** 128n;
 export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
   readonly protocolKey = 'uniswap-v4-wbtc-usdc-rewards' as const;
   readonly protocolName = PROTOCOL_NAME;
+  private warnedMissingRpc = false;
 
   private getValidatedConfig() {
     const config = getProtocolConfig()[PROTOCOL_KEY];
@@ -35,12 +45,69 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
     ) {
       throw new Error(`${PROTOCOL_KEY} config not found or incomplete`);
     }
-    return config as typeof config & {
+    return {
+      ...config,
+      chainId: config.chainId ?? ETHEREUM_CHAIN_ID,
+      positionManager: normalizeAddress(config.positionManager),
+      stateView: normalizeAddress(config.stateView),
+      currency0: normalizeAddress(config.currency0),
+      currency1: normalizeAddress(config.currency1),
+      rewardToken: config.rewardToken ? normalizeAddress(config.rewardToken) : config.rewardToken,
+    } as typeof config & {
+      chainId: number;
       positionManager: string;
       currency0: string;
       currency1: string;
       stateView: string;
     };
+  }
+
+  private getChainLabel(chainId: number): string {
+    if (chainId === ARBITRUM_CHAIN_ID) {
+      return 'Arbitrum';
+    }
+    if (chainId === ETHEREUM_CHAIN_ID) {
+      return 'Ethereum';
+    }
+    return `chain ${chainId}`;
+  }
+
+  private getChainProvider(chainId: number): Provider | null {
+    try {
+      return getProviderForChain(chainId);
+    } catch {
+      if (!this.warnedMissingRpc) {
+        console.warn(
+          `[${this.protocolName}] No ${this.getChainLabel(chainId)} RPC provider configured. ` +
+          'Configure chain-capable providers in admin or set the matching RPC env vars.'
+        );
+        this.warnedMissingRpc = true;
+      }
+      return null;
+    }
+  }
+
+  private getScanProvider(chainId: number): Provider | null {
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      return null;
+    }
+    return getScanCapableProviderForChain(chainId);
+  }
+
+  private resolveChainId(rawChainId: unknown, fallbackChainId: number): number {
+    if (typeof rawChainId === 'number' && Number.isInteger(rawChainId)) {
+      return rawChainId;
+    }
+
+    if (typeof rawChainId === 'string' && rawChainId.trim().length > 0) {
+      const parsed = Number(rawChainId);
+      if (Number.isInteger(parsed)) {
+        return parsed;
+      }
+    }
+
+    return fallbackChainId;
   }
 
   /**
@@ -54,19 +121,10 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
     const checksumAddress = toChecksumAddress(walletAddress);
     const positions: Partial<Position>[] = [];
 
-    const { getProvider } = await import('../utils/ethereum');
-    const proxyProvider = getProvider();
-
-    let scanProvider;
-    if ('getRPCManager' in proxyProvider && typeof proxyProvider.getRPCManager === 'function') {
-      const manager = (proxyProvider as any).getRPCManager();
-      scanProvider = manager.getScanCapableProvider();
-      if (!scanProvider) {
-        console.warn(`[${PROTOCOL_NAME}] No scan-capable RPC provider available - skipping discovery`);
-        return [];
-      }
-    } else {
-      scanProvider = proxyProvider;
+    const scanProvider = this.getScanProvider(config.chainId);
+    if (!scanProvider) {
+      console.warn(`[${PROTOCOL_NAME}] No scan-capable RPC provider available - skipping discovery`);
+      return [];
     }
 
     const fromBlock = config.deployBlock ?? 21688823;
@@ -119,11 +177,14 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
             tickUpper: entry.tickUpper,
             rewardTokenIndex,
             rewardDecimals,
+            chainId: config.chainId,
             currency0: entry.poolKey.currency0,
             currency1: entry.poolKey.currency1,
             fee: entry.poolKey.fee.toString(),
             tickSpacing: entry.poolKey.tickSpacing.toString(),
             hooks: entry.poolKey.hooks,
+            // Rewards-only positions can legitimately have zero claimable fees at discovery time.
+            allowZeroValueDiscovery: true,
           },
           isActive: true,
         });
@@ -140,6 +201,13 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
    * Uses fee growth delta * liquidity / Q128 (Uniswap v4 fee accounting).
    */
   async readCurrentValue(position: Position): Promise<number> {
+    const config = this.getValidatedConfig();
+    const chainId = this.resolveChainId(position.metadata.chainId, config.chainId);
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      throw new Error(`[${this.protocolName}] ${this.getChainLabel(chainId)} RPC provider is required to read position values`);
+    }
+
     const {
       tokenId,
       stateView,
@@ -164,14 +232,16 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
       throw new Error(`Invalid ${PROTOCOL_KEY} position metadata`);
     }
 
+    const normalizedStateView = normalizeAddress(stateView);
+    const normalizedPositionManager = normalizeAddress(positionManager);
     const stateViewAbi = getAbi('UniswapV4StateView');
-    const stateViewContract = getContract(stateView, stateViewAbi);
+    const stateViewContract = getContract(normalizedStateView, stateViewAbi, provider);
 
     const salt = ethers.zeroPadValue(ethers.toBeHex(BigInt(tokenId)), 32);
 
     // Query using Position Manager as the owner (v4 pattern)
     const [liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128] =
-      await stateViewContract.getPositionInfo(poolId, positionManager, tickLower, tickUpper, salt);
+      await stateViewContract.getPositionInfo(poolId, normalizedPositionManager, tickLower, tickUpper, salt);
 
     if (liquidity === 0n) {
       return 0;

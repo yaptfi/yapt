@@ -165,6 +165,7 @@ export interface ProtocolConfig {
     currency1Symbol?: string;
     currency0Decimals?: number;
     currency1Decimals?: number;
+    chainId?: number;
     fee?: number;
     tickSpacing?: number;
     deployBlock?: number;

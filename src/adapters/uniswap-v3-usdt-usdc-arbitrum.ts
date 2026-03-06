@@ -71,7 +71,6 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
   readonly protocolKey = 'uniswap-v3-usdt-usdc-arbitrum' as const;
   readonly protocolName = 'Uniswap v3 USDT/USDC (Arbitrum)';
 
-  private arbitrumProvider: Provider | null = null;
   private warnedMissingRpc = false;
 
   private getPositionField(positionInfo: UniswapV3PositionInfo, index: number, key: keyof UniswapV3PositionInfo): unknown {
@@ -79,13 +78,8 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
   }
 
   private getArbitrumProvider(): Provider | null {
-    if (this.arbitrumProvider) {
-      return this.arbitrumProvider;
-    }
-
     try {
-      this.arbitrumProvider = getProviderForChain(ARBITRUM_CHAIN_ID);
-      return this.arbitrumProvider;
+      return getProviderForChain(ARBITRUM_CHAIN_ID);
     } catch {
       if (!this.warnedMissingRpc) {
         console.warn(

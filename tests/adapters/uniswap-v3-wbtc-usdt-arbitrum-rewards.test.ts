@@ -147,6 +147,44 @@ describe('UniswapV3WbtcUsdtArbitrumRewardsAdapter', () => {
     expect(getContract).not.toHaveBeenCalled();
   });
 
+  it('re-reads the chain provider on each operation so RPC reloads take effect', async () => {
+    const providerA = { name: 'provider-a' };
+    const providerB = { name: 'provider-b' };
+    (getProviderForChain as jest.Mock)
+      .mockReturnValueOnce(providerA)
+      .mockReturnValueOnce(providerB);
+
+    const discoveryManager = {
+      balanceOf: jest.fn().mockResolvedValue(1n),
+      tokenOfOwnerByIndex: jest.fn().mockResolvedValue(111n),
+      positions: jest.fn().mockResolvedValue({
+        token0: WBTC,
+        token1: USDT,
+        fee: 3000n,
+        liquidity: 1n,
+        tokensOwed0: 0n,
+        tokensOwed1: 0n,
+      }),
+    };
+    const readManager = {
+      collect: {
+        staticCall: jest.fn().mockResolvedValue([0n, 1250000n]),
+      },
+    };
+
+    (getContract as jest.Mock)
+      .mockReturnValueOnce(discoveryManager)
+      .mockReturnValueOnce(readManager);
+    (formatUnits as jest.Mock).mockImplementation((amount: bigint) => amount === 1250000n ? '1.25' : '0');
+
+    const adapter = new UniswapV3WbtcUsdtArbitrumRewardsAdapter();
+    await adapter.discover('0xabc0000000000000000000000000000000000000');
+    await adapter.readCurrentValue(POSITION);
+
+    expect((getContract as jest.Mock).mock.calls[0][2]).toBe(providerA);
+    expect((getContract as jest.Mock).mock.calls[1][2]).toBe(providerB);
+  });
+
   it('reads only USDT claimable rewards and applies stable price overrides', async () => {
     const collectStaticCall = jest.fn().mockResolvedValue([2500000n, 1250000n]); // 2.5 WBTC side, 1.25 USDT side
     const manager = {

@@ -209,13 +209,16 @@ Yapt uses capability-based routing to handle RPC provider limitations:
 **Single Provider** (simplest):
 ```env
 ETH_RPC_URL=https://mainnet.infura.io/v3/YOUR_KEY
+ETH_RPC_SUPPORTS_LARGE_BLOCK_SCANS=true
 # ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+# ARBITRUM_RPC_SUPPORTS_LARGE_BLOCK_SCANS=false
 ```
 
 **Multiple Providers** (optimal):
 - Add via admin panel at `/admin.html`
 - Set chain capabilities plus provider features (Large Block Scans, ENS)
 - Configure Alchemy (fast, no scans) + Infura (slower, supports scans)
+- Environment fallback also supports comma-separated capability flags via `*_RPC_SCAN_CAPABILITIES` and `*_RPC_ENS_CAPABILITIES`
 - See `CLAUDE.md` for detailed configuration
 
 **Common Issue**: Alchemy free tier restricts `eth_getLogs` to 10 blocks. Set `supportsLargeBlockScans=false` for Alchemy free tier, or Uniswap discovery will fail.

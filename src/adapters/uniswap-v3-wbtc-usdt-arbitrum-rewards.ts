@@ -69,17 +69,11 @@ export class UniswapV3WbtcUsdtArbitrumRewardsAdapter extends BaseProtocolAdapter
   readonly protocolKey = 'uniswap-v3-wbtc-usdt-arbitrum-rewards' as const;
   readonly protocolName = 'Uniswap v3 WBTC/USDT (Arbitrum)';
 
-  private arbitrumProvider: Provider | null = null;
   private warnedMissingRpc = false;
 
   private getArbitrumProvider(): Provider | null {
-    if (this.arbitrumProvider) {
-      return this.arbitrumProvider;
-    }
-
     try {
-      this.arbitrumProvider = getProviderForChain(ARBITRUM_CHAIN_ID);
-      return this.arbitrumProvider;
+      return getProviderForChain(ARBITRUM_CHAIN_ID);
     } catch {
       if (!this.warnedMissingRpc) {
         console.warn(

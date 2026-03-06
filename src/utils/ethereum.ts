@@ -47,6 +47,50 @@ function getMultiRpcEnvKeys(chainId: number): { urlsKey: string; limitsKey: stri
   };
 }
 
+function getSingleRpcCapabilityEnvKeys(chainId: number): {
+  supportsLargeBlockScansKey: string;
+  supportsENSKey: string;
+} {
+  if (chainId === ETHEREUM_CHAIN_ID) {
+    return {
+      supportsLargeBlockScansKey: 'ETH_RPC_SUPPORTS_LARGE_BLOCK_SCANS',
+      supportsENSKey: 'ETH_RPC_SUPPORTS_ENS',
+    };
+  }
+  if (chainId === ARBITRUM_CHAIN_ID) {
+    return {
+      supportsLargeBlockScansKey: 'ARBITRUM_RPC_SUPPORTS_LARGE_BLOCK_SCANS',
+      supportsENSKey: 'ARBITRUM_RPC_SUPPORTS_ENS',
+    };
+  }
+  return {
+    supportsLargeBlockScansKey: `RPC_SUPPORTS_LARGE_BLOCK_SCANS_${chainId}`,
+    supportsENSKey: `RPC_SUPPORTS_ENS_${chainId}`,
+  };
+}
+
+function getMultiRpcCapabilityEnvKeys(chainId: number): {
+  scanCapabilitiesKey: string;
+  ensCapabilitiesKey: string;
+} {
+  if (chainId === ETHEREUM_CHAIN_ID) {
+    return {
+      scanCapabilitiesKey: 'ETH_RPC_SCAN_CAPABILITIES',
+      ensCapabilitiesKey: 'ETH_RPC_ENS_CAPABILITIES',
+    };
+  }
+  if (chainId === ARBITRUM_CHAIN_ID) {
+    return {
+      scanCapabilitiesKey: 'ARBITRUM_RPC_SCAN_CAPABILITIES',
+      ensCapabilitiesKey: 'ARBITRUM_RPC_ENS_CAPABILITIES',
+    };
+  }
+  return {
+    scanCapabilitiesKey: `RPC_SCAN_CAPABILITIES_${chainId}`,
+    ensCapabilitiesKey: `RPC_ENS_CAPABILITIES_${chainId}`,
+  };
+}
+
 function getSingleProviderUrlFromEnv(chainId: number): string | null {
   const key = getSingleRpcEnvKey(chainId);
   const value = process.env[key];
@@ -56,8 +100,49 @@ function getSingleProviderUrlFromEnv(chainId: number): string | null {
   return value.trim();
 }
 
-function parseMultiProviderEnv(chainId: number): Array<{ url: string; callsPerSecond: number }> {
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean): boolean {
+  if (!value) {
+    return defaultValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+    return false;
+  }
+
+  return defaultValue;
+}
+
+function parseBooleanListEnv(
+  rawValue: string | undefined,
+  expectedLength: number,
+  defaultValue: boolean,
+  valueLabel: string
+): boolean[] {
+  if (!rawValue) {
+    return Array.from({ length: expectedLength }, () => defaultValue);
+  }
+
+  const rawValues = rawValue.split(',').map((value) => value.trim()).filter((value) => value.length > 0);
+  if (rawValues.length !== expectedLength) {
+    console.warn(`[${valueLabel}] length mismatch, using defaults`);
+    return Array.from({ length: expectedLength }, () => defaultValue);
+  }
+
+  return rawValues.map((value) => parseBooleanEnv(value, defaultValue));
+}
+
+function parseMultiProviderEnv(chainId: number): Array<{
+  url: string;
+  callsPerSecond: number;
+  supportsLargeBlockScans: boolean;
+  supportsENS: boolean;
+}> {
   const { urlsKey, limitsKey } = getMultiRpcEnvKeys(chainId);
+  const { scanCapabilitiesKey, ensCapabilitiesKey } = getMultiRpcCapabilityEnvKeys(chainId);
   const rawUrls = process.env[urlsKey];
   if (!rawUrls) {
     return [];
@@ -77,9 +162,24 @@ function parseMultiProviderEnv(chainId: number): Array<{ url: string; callsPerSe
     console.warn(`[${getChainLabel(chainId)}] ${urlsKey} and ${limitsKey} length mismatch, using defaults`);
   }
 
+  const scanCapabilities = parseBooleanListEnv(
+    process.env[scanCapabilitiesKey],
+    urls.length,
+    true,
+    `${getChainLabel(chainId)} ${scanCapabilitiesKey}`
+  );
+  const ensCapabilities = parseBooleanListEnv(
+    process.env[ensCapabilitiesKey],
+    urls.length,
+    true,
+    `${getChainLabel(chainId)} ${ensCapabilitiesKey}`
+  );
+
   return urls.map((url, index) => ({
     url,
     callsPerSecond: Number.isFinite(limits[index]) && limits[index] > 0 ? limits[index] : 10,
+    supportsLargeBlockScans: scanCapabilities[index] ?? true,
+    supportsENS: ensCapabilities[index] ?? true,
   }));
 }
 
@@ -126,6 +226,8 @@ async function initializeProviderForChain(chainId: number): Promise<Provider> {
       isActive: true,
       supportsEthereum: chainId === ETHEREUM_CHAIN_ID,
       supportsArbitrum: chainId === ARBITRUM_CHAIN_ID,
+      supportsLargeBlockScans: entry.supportsLargeBlockScans,
+      supportsENS: entry.supportsENS,
     }));
 
     console.log(`[${chainLabel}] Initialized with ${configs.length} RPC provider(s) from environment`);
@@ -135,6 +237,7 @@ async function initializeProviderForChain(chainId: number): Promise<Provider> {
   const singleUrl = getSingleProviderUrlFromEnv(chainId);
   if (singleUrl) {
     const callsPerSecond = RPC_MIN_INTERVAL_MS > 0 ? 1000 / RPC_MIN_INTERVAL_MS : 10;
+    const { supportsLargeBlockScansKey, supportsENSKey } = getSingleRpcCapabilityEnvKeys(chainId);
     const config: RPCProviderConfig = {
       name: `${chainLabel} Default Provider`,
       url: singleUrl,
@@ -143,6 +246,8 @@ async function initializeProviderForChain(chainId: number): Promise<Provider> {
       isActive: true,
       supportsEthereum: chainId === ETHEREUM_CHAIN_ID,
       supportsArbitrum: chainId === ARBITRUM_CHAIN_ID,
+      supportsLargeBlockScans: parseBooleanEnv(process.env[supportsLargeBlockScansKey], true),
+      supportsENS: parseBooleanEnv(process.env[supportsENSKey], true),
     };
 
     console.log(`[${chainLabel}] Initialized with single RPC provider from ${getSingleRpcEnvKey(chainId)}`);
@@ -224,6 +329,14 @@ export function getProvider(): Provider {
   return getProviderForChain(ETHEREUM_CHAIN_ID);
 }
 
+export function getScanCapableProviderForChain(chainId: number): Provider | null {
+  const provider = getProviderForChain(chainId);
+  if ('getRPCManager' in provider && typeof provider.getRPCManager === 'function') {
+    return provider.getRPCManager().getScanCapableProvider();
+  }
+  return provider;
+}
+
 /**
  * Force reload of RPC providers for all supported chains.
  */
@@ -261,6 +374,10 @@ export function isValidAddress(address: string): boolean {
 
 export function toChecksumAddress(address: string): string {
   return ethers.getAddress(address);
+}
+
+export function normalizeAddress(address: string): string {
+  return ethers.getAddress(address.toLowerCase());
 }
 
 export function formatUnits(value: bigint, decimals: number): string {

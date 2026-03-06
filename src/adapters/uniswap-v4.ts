@@ -1,6 +1,15 @@
 import { BaseProtocolAdapter } from './base';
 import { Position } from '../types';
-import { getContract, toChecksumAddress, formatUnits } from '../utils/ethereum';
+import {
+  ARBITRUM_CHAIN_ID,
+  ETHEREUM_CHAIN_ID,
+  formatUnits,
+  getContract,
+  getProviderForChain,
+  getScanCapableProviderForChain,
+  normalizeAddress,
+  toChecksumAddress,
+} from '../utils/ethereum';
 import { getProtocolConfig, getAbi } from '../utils/config';
 import { ethers } from 'ethers';
 import { getWalletUniswapV4Inventory } from '../utils/uniswap-v4-inventory';
@@ -22,6 +31,71 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
   readonly protocolName = 'Uniswap v4 USDC/USDT';
 
   private readonly Q128 = 2n ** 128n; // Used in fee calculations
+  private warnedMissingRpc = false;
+
+  private getValidatedConfig() {
+    const config = getProtocolConfig()[this.protocolKey];
+    if (!config || !config.positionManager || !config.currency0 || !config.currency1 || !config.fee) {
+      throw new Error('Uniswap v4 USDC/USDT config not found or incomplete');
+    }
+
+    return {
+      ...config,
+      chainId: config.chainId ?? ETHEREUM_CHAIN_ID,
+      positionManager: normalizeAddress(config.positionManager),
+      stateView: config.stateView ? normalizeAddress(config.stateView) : config.stateView,
+      currency0: normalizeAddress(config.currency0),
+      currency1: normalizeAddress(config.currency1),
+    };
+  }
+
+  private getChainLabel(chainId: number): string {
+    if (chainId === ARBITRUM_CHAIN_ID) {
+      return 'Arbitrum';
+    }
+    if (chainId === ETHEREUM_CHAIN_ID) {
+      return 'Ethereum';
+    }
+    return `chain ${chainId}`;
+  }
+
+  private getChainProvider(chainId: number) {
+    try {
+      return getProviderForChain(chainId);
+    } catch {
+      if (!this.warnedMissingRpc) {
+        console.warn(
+          `[${this.protocolName}] No ${this.getChainLabel(chainId)} RPC provider configured. ` +
+          'Configure chain-capable providers in admin or set the matching RPC env vars.'
+        );
+        this.warnedMissingRpc = true;
+      }
+      return null;
+    }
+  }
+
+  private getScanProvider(chainId: number) {
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      return null;
+    }
+    return getScanCapableProviderForChain(chainId);
+  }
+
+  private resolveChainId(rawChainId: unknown, fallbackChainId: number): number {
+    if (typeof rawChainId === 'number' && Number.isInteger(rawChainId)) {
+      return rawChainId;
+    }
+
+    if (typeof rawChainId === 'string' && rawChainId.trim().length > 0) {
+      const parsed = Number(rawChainId);
+      if (Number.isInteger(parsed)) {
+        return parsed;
+      }
+    }
+
+    return fallbackChainId;
+  }
 
   /**
    * Discover Uniswap v4 positions by scanning NFT Transfer events.
@@ -30,28 +104,16 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
    * REQUIRES: RPC provider with supportsLargeBlockScans=true
    */
   async discover(walletAddress: string): Promise<Partial<Position>[]> {
-    const config = getProtocolConfig()['uniswap-v4-usdc-usdt'];
-    if (!config || !config.positionManager || !config.currency0 || !config.currency1 || !config.fee) {
-      throw new Error('Uniswap v4 USDC/USDT config not found or incomplete');
-    }
+    const config = this.getValidatedConfig();
 
     const checksumAddress = toChecksumAddress(walletAddress);
     const positions: Partial<Position>[] = [];
 
-    const { getProvider } = await import('../utils/ethereum');
-    const proxyProvider = getProvider();
-
-    let scanProvider;
-    if ('getRPCManager' in proxyProvider && typeof proxyProvider.getRPCManager === 'function') {
-      const manager = (proxyProvider as any).getRPCManager();
-      scanProvider = manager.getScanCapableProvider();
-      if (!scanProvider) {
-        console.warn('[Uniswap v4] No scan-capable RPC provider available - skipping Uniswap discovery');
-        console.warn('[Uniswap v4] Configure an RPC provider with supportsLargeBlockScans=true (e.g., Infura)');
-        return [];
-      }
-    } else {
-      scanProvider = proxyProvider;
+    const scanProvider = this.getScanProvider(config.chainId);
+    if (!scanProvider) {
+      console.warn('[Uniswap v4] No scan-capable RPC provider available - skipping Uniswap discovery');
+      console.warn('[Uniswap v4] Configure an RPC provider with supportsLargeBlockScans=true (e.g., Infura)');
+      return [];
     }
 
     const fromBlock = config.deployBlock ?? 21688823;
@@ -72,10 +134,11 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
         const currency0Lower = entry.poolKey.currency0.toLowerCase();
         const currency1Lower = entry.poolKey.currency1.toLowerCase();
 
-        const isTargetPool =
-          currency0Lower === expectedCurrency0 &&
-          currency1Lower === expectedCurrency1 &&
-          entry.poolKey.fee === configFee;
+        const pairMatches =
+          (currency0Lower === expectedCurrency0 && currency1Lower === expectedCurrency1) ||
+          (currency0Lower === expectedCurrency1 && currency1Lower === expectedCurrency0);
+
+        const isTargetPool = pairMatches && entry.poolKey.fee === configFee;
 
         if (!isTargetPool) {
           continue;
@@ -96,6 +159,7 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
             poolId: entry.poolId,
             tickLower: entry.tickLower,
             tickUpper: entry.tickUpper,
+            chainId: config.chainId,
             currency0: entry.poolKey.currency0,
             currency1: entry.poolKey.currency1,
             currency0Symbol: config.currency0Symbol,
@@ -121,6 +185,13 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
    * Value = Token amounts in range + Uncollected fees (all in USD)
    */
   async readCurrentValue(position: Position): Promise<number> {
+    const config = this.getValidatedConfig();
+    const chainId = this.resolveChainId(position.metadata.chainId, config.chainId);
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      throw new Error(`[${this.protocolName}] ${this.getChainLabel(chainId)} RPC provider is required to read position values`);
+    }
+
     const {
       tokenId,
       stateView,
@@ -136,9 +207,11 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
       throw new Error('Invalid Uniswap v4 position metadata');
     }
 
+    const normalizedStateView = normalizeAddress(stateView);
+    const normalizedPositionManager = normalizeAddress(positionManager);
     // Get StateView contract for querying pool state
     const stateViewAbi = getAbi('UniswapV4StateView');
-    const stateViewContract = getContract(stateView, stateViewAbi);
+    const stateViewContract = getContract(normalizedStateView, stateViewAbi, provider);
 
     try {
       // Use tokenId as salt (Uniswap v4 convention)
@@ -148,7 +221,7 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
       // The Position Manager contract holds the actual liquidity positions in the pool.
       // Users own NFTs that represent claims on those positions.
       const [liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128] =
-        await stateViewContract.getPositionInfo(poolId, positionManager, tickLower, tickUpper, salt);
+        await stateViewContract.getPositionInfo(poolId, normalizedPositionManager, tickLower, tickUpper, salt);
 
       // If no liquidity, position has zero value
       if (liquidity === 0n) {
@@ -183,7 +256,8 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
         poolId,
         tickLower,
         tickUpper,
-        stateView
+        normalizedStateView,
+        provider
       );
 
       // Total value = principal liquidity + uncollected fees
@@ -255,12 +329,13 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
     poolId: string,
     tickLower: number,
     tickUpper: number,
-    stateView: string
+    stateView: string,
+    provider: ReturnType<typeof getProviderForChain>
   ): Promise<number> {
     try {
       // Get current price from pool
       const stateViewAbi = getAbi('UniswapV4StateView');
-      const stateViewContract = getContract(stateView, stateViewAbi);
+      const stateViewContract = getContract(stateView, stateViewAbi, provider);
 
       const [sqrtPriceX96] = await stateViewContract.getSlot0(poolId);
 
