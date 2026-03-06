@@ -13,6 +13,7 @@ import {
 import { getProtocolConfig, getAbi } from '../utils/config';
 import { ethers } from 'ethers';
 import { getWalletUniswapV4Inventory } from '../utils/uniswap-v4-inventory';
+import { isUniswapV4PositionInRange } from '../utils/uniswap-range';
 
 /**
  * Uniswap V4 LP Position Adapter
@@ -268,6 +269,37 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
       console.error(`Error reading Uniswap v4 position value for token ${tokenId}:`, error);
       throw error;
     }
+  }
+
+  async shouldProjectFutureIncome(position: Position): Promise<boolean> {
+    const config = this.getValidatedConfig();
+    const chainId = this.resolveChainId(position.metadata.chainId, config.chainId);
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      return true;
+    }
+
+    const { tokenId, stateView, poolId, tickLower, tickUpper, positionManager } = position.metadata;
+    if (
+      !tokenId ||
+      !stateView ||
+      !poolId ||
+      tickLower === undefined ||
+      tickUpper === undefined ||
+      !positionManager
+    ) {
+      return true;
+    }
+
+    return isUniswapV4PositionInRange(
+      provider,
+      stateView,
+      positionManager,
+      poolId,
+      Number(tickLower),
+      Number(tickUpper),
+      tokenId
+    );
   }
 
   /**

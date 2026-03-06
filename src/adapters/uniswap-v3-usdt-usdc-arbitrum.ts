@@ -14,6 +14,7 @@ import {
   getWalletUniswapV3Inventory,
   RawUniswapV3PositionInfo,
 } from '../utils/uniswap-v3-inventory';
+import { isUniswapV3PositionInRange } from '../utils/uniswap-range';
 const MAX_UINT128 = (2n ** 128n) - 1n;
 
 interface UniswapV3LpConfig {
@@ -275,6 +276,20 @@ export class UniswapV3UsdtUsdcArbitrumAdapter extends BaseProtocolAdapter {
     const amount1Usd = parseFloat(formatUnits(amount1, Number(currency1Decimals))) * token1Price;
 
     return amount0Usd + amount1Usd + fees0Usd + fees1Usd;
+  }
+
+  async shouldProjectFutureIncome(position: Position): Promise<boolean> {
+    const provider = this.getArbitrumProvider();
+    if (!provider) {
+      return true;
+    }
+
+    const { tokenId, positionManager, poolAddress } = position.metadata;
+    if (!tokenId || !positionManager || !poolAddress) {
+      return true;
+    }
+
+    return isUniswapV3PositionInRange(provider, positionManager, tokenId, poolAddress);
   }
 
   /**

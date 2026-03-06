@@ -43,6 +43,18 @@ export interface IProtocolAdapter {
   isPositionClosed?(position: Position): Promise<boolean>;
 
   /**
+   * Optional: determine whether future income should currently be projected.
+   *
+   * This is used for positions whose historical yield may remain positive while
+   * their current state cannot accrue new yield, such as Uniswap LP positions
+   * that are temporarily out of range.
+   *
+   * Implementations should return `false` only when future earnings are
+   * confidently blocked right now. On uncertainty, prefer returning `true`.
+   */
+  shouldProjectFutureIncome?(position: Position): Promise<boolean>;
+
+  /**
    * Calculate net flows (deposits/withdrawals) for a position
    * within a specific block range
    *
@@ -76,6 +88,13 @@ export abstract class BaseProtocolAdapter implements IProtocolAdapter {
    */
   async isPositionClosed(_position: Position): Promise<boolean> {
     return false;
+  }
+
+  /**
+   * Optional: future-income projection signal (defaults to true / projectable).
+   */
+  async shouldProjectFutureIncome(_position: Position): Promise<boolean> {
+    return true;
   }
 
   /**

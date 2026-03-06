@@ -15,6 +15,35 @@ import {
 // Flow detection removed: with hourly updates, yield deltas are small enough that
 // deposits/withdrawals are obvious from magnitude. No need for expensive event scanning.
 
+export interface AbsoluteYieldMetrics {
+  totalYield7d: number;
+  avgDailyYield: number;
+  projectedMonthlyYield: number;
+  projectedYearlyYield: number;
+}
+
+export interface PositionMetrics {
+  valueUsd: number;
+  apy: number | null;
+  apy7d: number | null;
+  apy30d: number | null;
+  lastUpdated: Date;
+  shouldProjectFutureIncome: boolean;
+  absoluteYield?: AbsoluteYieldMetrics;
+}
+
+function getProtocolKeyFromPosition(position?: Position): string | undefined {
+  if (!position) {
+    return undefined;
+  }
+
+  const metadata = position.metadata as Record<string, unknown>;
+  const metadataProtocolKey = typeof metadata.protocolKey === 'string' ? metadata.protocolKey : undefined;
+  const rowProtocolKey = (position as Position & { protocol_key?: string }).protocol_key;
+
+  return metadataProtocolKey || rowProtocolKey;
+}
+
 
 /**
  * Create a reset snapshot to mark the start of a new APY tracking period
@@ -55,7 +84,7 @@ async function createResetSnapshot(
  * APY is calculated using a 4-hour lookback window for stability
  */
 export async function updatePosition(position: Position): Promise<void> {
-  const protocolKey = position.metadata.protocolKey || (position as any).protocol_key;
+  const protocolKey = getProtocolKeyFromPosition(position);
   if (!protocolKey) {
     console.error(`Position ${position.id} (${position.displayName}) missing protocol key. Metadata:`, JSON.stringify(position.metadata));
     return;
@@ -301,7 +330,7 @@ function computeFixedIncomeYtm(position: Position): number | null {
  * Get current metrics for a position including windowed APYs
  * For reward-based positions, also includes absolute yield metrics
  */
-export async function getPositionMetrics(positionId: string, position?: Position) {
+export async function getPositionMetrics(positionId: string, position?: Position): Promise<PositionMetrics | null> {
   const latestSnapshot = await getLatestSnapshot(positionId);
 
   if (!latestSnapshot) {
@@ -310,6 +339,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
 
   // Check if this is a reward-based position (volatile principal, stable yield)
   const isRewardBased = getPositionCategory(position?.measureMethod ?? '') === 'rewards';
+  const protocolKey = getProtocolKeyFromPosition(position);
 
   let absoluteYieldMetrics = null;
 
@@ -427,6 +457,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
   let apy = null;
   let apy7d = null;
   let apy30d = null;
+  let shouldProjectFutureIncome = true;
 
   const isFixedIncome = getPositionCategory(position?.measureMethod ?? '') === 'fixed-income';
 
@@ -453,12 +484,28 @@ export async function getPositionMetrics(positionId: string, position?: Position
     apy30d = (result30d && result30d.windowHours > 240) ? result30d.apy : null;
   }
 
+  if (position && protocolKey) {
+    try {
+      const adapter = getAdapter(protocolKey as ProtocolKey);
+      if (typeof adapter.shouldProjectFutureIncome === 'function') {
+        shouldProjectFutureIncome = await adapter.shouldProjectFutureIncome(position);
+      }
+    } catch (error) {
+      console.warn(
+        `[metrics] Failed to determine future-income projection status for ${position.id} (${protocolKey}):`,
+        error
+      );
+      shouldProjectFutureIncome = true;
+    }
+  }
+
   return {
     valueUsd: parseFloat(latestSnapshot.value_usd),
     apy,
     apy7d,
     apy30d,
     lastUpdated: latestSnapshot.ts,
+    shouldProjectFutureIncome,
     // Include absolute yield metrics for reward-based positions
     ...(absoluteYieldMetrics && { absoluteYield: absoluteYieldMetrics }),
   };

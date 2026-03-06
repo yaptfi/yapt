@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getActivePositionsByWallets } from '../models/position';
 import { getUserWallets } from '../models/user-wallet';
 import { getPositionMetrics } from '../services/update';
-import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
+import { getProjectedIncomeFromMetrics } from '../services/position-view';
 import { query } from '../utils/db';
 import { requireAuth } from '../middleware/auth';
 import { getPositionCategory } from '../utils/position-category';
@@ -54,20 +54,10 @@ export default async function portfolioRoutes(server: FastifyInstance) {
             // For reward-based positions, use absolute yield metrics
             // For APY-based positions, use percentage-based income projections
             const isRewardBased = getPositionCategory(pos.measureMethod) === 'rewards';
-            let estDaily, estMonthly, estYearly;
-
-            if (isRewardBased && metrics.absoluteYield) {
-              // Use actual yield data
-              estDaily = metrics.absoluteYield.avgDailyYield;
-              estMonthly = metrics.absoluteYield.projectedMonthlyYield;
-              estYearly = metrics.absoluteYield.projectedYearlyYield;
-            } else {
-              // Use APY-based calculation
-              const currentApy = metrics.apy7d || metrics.apy || 0;
-              estDaily = estimateDailyIncome(metrics.valueUsd, currentApy);
-              estMonthly = estimateMonthlyIncome(metrics.valueUsd, currentApy);
-              estYearly = estimateYearlyIncome(metrics.valueUsd, currentApy);
-            }
+            const { estDailyUsd, estMonthlyUsd, estYearlyUsd } = getProjectedIncomeFromMetrics(
+              metrics,
+              getPositionCategory(pos.measureMethod)
+            );
 
             // Include position value in total
             // For 'count' mode: valueUsd = principal + accrued interest
@@ -75,9 +65,9 @@ export default async function portfolioRoutes(server: FastifyInstance) {
             totalValueUsd += metrics.valueUsd;
 
             // Always include income projections
-            totalEstDailyUsd += estDaily;
-            totalEstMonthlyUsd += estMonthly;
-            totalEstYearlyUsd += estYearly;
+            totalEstDailyUsd += estDailyUsd;
+            totalEstMonthlyUsd += estMonthlyUsd;
+            totalEstYearlyUsd += estYearlyUsd;
 
             return {
               id: pos.id,
@@ -91,9 +81,9 @@ export default async function portfolioRoutes(server: FastifyInstance) {
                 apy30d: metrics.apy30d,
               }),
               countingMode: pos.countingMode,
-              estDailyUsd: estDaily,
-              estMonthlyUsd: estMonthly,
-              estYearlyUsd: estYearly,
+              estDailyUsd,
+              estMonthlyUsd,
+              estYearlyUsd,
               // Include absolute yield metrics for reward positions
               ...(metrics.absoluteYield && { absoluteYield: metrics.absoluteYield }),
             };

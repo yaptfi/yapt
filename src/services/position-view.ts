@@ -1,6 +1,6 @@
 import { queryOne } from '../utils/db';
 import { Position } from '../types';
-import { getPositionMetrics } from './update';
+import { getPositionMetrics, PositionMetrics } from './update';
 import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
 import { getPositionCategory, PositionCategory } from '../utils/position-category';
 
@@ -44,6 +44,34 @@ export interface ActualYieldSummary {
   actual30dYield: number;
 }
 
+export function getProjectedIncomeFromMetrics(
+  metrics: PositionMetrics,
+  category: PositionCategory
+): { estDailyUsd: number; estMonthlyUsd: number; estYearlyUsd: number } {
+  if (metrics.shouldProjectFutureIncome === false) {
+    return {
+      estDailyUsd: 0,
+      estMonthlyUsd: 0,
+      estYearlyUsd: 0,
+    };
+  }
+
+  if (category === 'rewards' && metrics.absoluteYield) {
+    return {
+      estDailyUsd: metrics.absoluteYield.avgDailyYield,
+      estMonthlyUsd: metrics.absoluteYield.projectedMonthlyYield,
+      estYearlyUsd: metrics.absoluteYield.projectedYearlyYield,
+    };
+  }
+
+  const currentApy = metrics.apy7d || metrics.apy || 0;
+  return {
+    estDailyUsd: estimateDailyIncome(metrics.valueUsd, currentApy),
+    estMonthlyUsd: estimateMonthlyIncome(metrics.valueUsd, currentApy),
+    estYearlyUsd: estimateYearlyIncome(metrics.valueUsd, currentApy),
+  };
+}
+
 /**
  * Enrich positions with APY/absolute-yield metrics and income projections.
  * Shared by authenticated and guest position endpoints.
@@ -77,20 +105,7 @@ export async function enrichPositionsWithMetrics(
           lastUpdated: null,
         };
       }
-      let estDailyUsd: number;
-      let estMonthlyUsd: number;
-      let estYearlyUsd: number;
-
-      if (isRewardBased && metrics.absoluteYield) {
-        estDailyUsd = metrics.absoluteYield.avgDailyYield;
-        estMonthlyUsd = metrics.absoluteYield.projectedMonthlyYield;
-        estYearlyUsd = metrics.absoluteYield.projectedYearlyYield;
-      } else {
-        const currentApy = metrics.apy7d || metrics.apy || 0;
-        estDailyUsd = estimateDailyIncome(metrics.valueUsd, currentApy);
-        estMonthlyUsd = estimateMonthlyIncome(metrics.valueUsd, currentApy);
-        estYearlyUsd = estimateYearlyIncome(metrics.valueUsd, currentApy);
-      }
+      const { estDailyUsd, estMonthlyUsd, estYearlyUsd } = getProjectedIncomeFromMetrics(metrics, category);
 
       return {
         id: position.id,

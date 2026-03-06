@@ -13,6 +13,7 @@ import {
 } from '../utils/ethereum';
 import { getProtocolConfig, getAbi, getStablePriceOverrides } from '../utils/config';
 import { getWalletUniswapV4Inventory } from '../utils/uniswap-v4-inventory';
+import { isUniswapV4PositionInRange } from '../utils/uniswap-range';
 
 const PROTOCOL_KEY = 'uniswap-v4-wbtc-usdc-rewards';
 const PROTOCOL_NAME = 'Uniswap v4 WBTC/USDC';
@@ -355,6 +356,37 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
     const rewardPriceUsd = this.getStablePrice(position.baseAsset, stablePriceOverrides);
 
     return rewardAmount * rewardPriceUsd;
+  }
+
+  async shouldProjectFutureIncome(position: Position): Promise<boolean> {
+    const config = this.getValidatedConfig();
+    const chainId = this.resolveChainId(position.metadata.chainId, config.chainId);
+    const provider = this.getChainProvider(chainId);
+    if (!provider) {
+      return true;
+    }
+
+    const { tokenId, stateView, poolId, tickLower, tickUpper, positionManager } = position.metadata;
+    if (
+      !tokenId ||
+      !stateView ||
+      !poolId ||
+      tickLower === undefined ||
+      tickUpper === undefined ||
+      !positionManager
+    ) {
+      return true;
+    }
+
+    return isUniswapV4PositionInRange(
+      provider,
+      stateView,
+      positionManager,
+      poolId,
+      Number(tickLower),
+      Number(tickUpper),
+      tokenId
+    );
   }
 
   async isPositionClosed(position: Position): Promise<boolean> {
