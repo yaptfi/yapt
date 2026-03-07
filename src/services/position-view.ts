@@ -44,6 +44,8 @@ export interface ActualYieldSummary {
   actual30dYield: number;
 }
 
+const SLOW_ENRICH_POSITIONS_MS = 750;
+
 export function getProjectedIncomeFromMetrics(
   metrics: PositionMetrics,
   category: PositionCategory
@@ -79,7 +81,8 @@ export function getProjectedIncomeFromMetrics(
 export async function enrichPositionsWithMetrics(
   positions: PositionLike[]
 ): Promise<EnrichedPositionView[]> {
-  return Promise.all(
+  const enrichStart = Date.now();
+  const result = await Promise.all(
     positions.map(async (position): Promise<EnrichedPositionView> => {
       const metrics = await getPositionMetrics(position.id, position as unknown as Position);
 
@@ -129,6 +132,15 @@ export async function enrichPositionsWithMetrics(
       };
     })
   );
+
+  const enrichDurationMs = Date.now() - enrichStart;
+  if (enrichDurationMs >= SLOW_ENRICH_POSITIONS_MS) {
+    console.warn(
+      `[positions] Slow enrichPositionsWithMetrics for ${positions.length} position(s): ${enrichDurationMs}ms`
+    );
+  }
+
+  return result;
 }
 
 /**

@@ -32,6 +32,9 @@ export interface PositionMetrics {
   absoluteYield?: AbsoluteYieldMetrics;
 }
 
+const SLOW_PROJECTION_CHECK_MS = 200;
+const SLOW_POSITION_METRICS_MS = 500;
+
 function getProtocolKeyFromPosition(position?: Position): string | undefined {
   if (!position) {
     return undefined;
@@ -331,6 +334,7 @@ function computeFixedIncomeYtm(position: Position): number | null {
  * For reward-based positions, also includes absolute yield metrics
  */
 export async function getPositionMetrics(positionId: string, position?: Position): Promise<PositionMetrics | null> {
+  const metricsStart = Date.now();
   const latestSnapshot = await getLatestSnapshot(positionId);
 
   if (!latestSnapshot) {
@@ -488,7 +492,14 @@ export async function getPositionMetrics(positionId: string, position?: Position
     try {
       const adapter = getAdapter(protocolKey as ProtocolKey);
       if (typeof adapter.shouldProjectFutureIncome === 'function') {
+        const projectionCheckStart = Date.now();
         shouldProjectFutureIncome = await adapter.shouldProjectFutureIncome(position);
+        const projectionCheckDurationMs = Date.now() - projectionCheckStart;
+        if (projectionCheckDurationMs >= SLOW_PROJECTION_CHECK_MS) {
+          console.warn(
+            `[metrics] Slow future-income projection check for ${position.id} (${protocolKey}): ${projectionCheckDurationMs}ms`
+          );
+        }
       }
     } catch (error) {
       console.warn(
@@ -499,7 +510,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
     }
   }
 
-  return {
+  const result: PositionMetrics = {
     valueUsd: parseFloat(latestSnapshot.value_usd),
     apy,
     apy7d,
@@ -509,4 +520,13 @@ export async function getPositionMetrics(positionId: string, position?: Position
     // Include absolute yield metrics for reward-based positions
     ...(absoluteYieldMetrics && { absoluteYield: absoluteYieldMetrics }),
   };
+
+  const metricsDurationMs = Date.now() - metricsStart;
+  if (metricsDurationMs >= SLOW_POSITION_METRICS_MS) {
+    console.warn(
+      `[metrics] Slow getPositionMetrics for ${positionId} (${protocolKey ?? 'unknown'}): ${metricsDurationMs}ms`
+    );
+  }
+
+  return result;
 }

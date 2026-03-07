@@ -26,6 +26,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
     networks:
       - yapt-network
   redis:
@@ -43,6 +44,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
     networks:
       - yapt-network
   app:
