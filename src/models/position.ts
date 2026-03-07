@@ -161,6 +161,25 @@ export async function updatePositionActiveStatus(
   );
 }
 
+export async function updatePositionFutureIncomeProjection(
+  id: string,
+  shouldProjectFutureIncome: boolean,
+  checkedAt: Date
+): Promise<void> {
+  await query(
+    `UPDATE position
+     SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+       'futureIncomeProjection',
+       jsonb_build_object(
+         'shouldProject', $2::boolean,
+         'checkedAt', $3::text
+       )
+     )
+     WHERE id = $1`,
+    [id, shouldProjectFutureIncome, checkedAt.toISOString()]
+  );
+}
+
 export async function getAllActivePositions(): Promise<Position[]> {
   return query<Position>(
     `SELECT ${POSITION_SELECT}

@@ -7,6 +7,7 @@ const mockGetSnapshotNearTime = jest.fn();
 const mockGetMostRecentResetSnapshot = jest.fn();
 const mockGetTotalYieldSince = jest.fn();
 const mockArchivePosition = jest.fn();
+const mockUpdatePositionFutureIncomeProjection = jest.fn();
 
 jest.mock('../../src/plugins/registry', () => ({
   getAdapter: mockGetAdapter,
@@ -22,6 +23,7 @@ jest.mock('../../src/models/snapshot', () => ({
 
 jest.mock('../../src/models/position', () => ({
   archivePosition: mockArchivePosition,
+  updatePositionFutureIncomeProjection: mockUpdatePositionFutureIncomeProjection,
 }));
 
 jest.mock('../../src/utils/apy', () => ({

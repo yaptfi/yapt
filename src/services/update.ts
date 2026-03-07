@@ -1,8 +1,9 @@
 import { getAdapter } from '../plugins/registry';
+import { BaseProtocolAdapter } from '../sdk/adapter';
 import { Position, ProtocolKey, PositionSnapshot } from '../types';
 import { getLatestSnapshot, createSnapshot, getTotalYieldSince, getSnapshotNearTime, getMostRecentResetSnapshot } from '../models/snapshot';
 import { computeApy } from '../utils/apy';
-import { archivePosition } from '../models/position';
+import { archivePosition, updatePositionFutureIncomeProjection } from '../models/position';
 import { sleep } from '../utils/async';
 import { getPositionCategory } from '../utils/position-category';
 import {
@@ -35,6 +36,11 @@ export interface PositionMetrics {
 const SLOW_PROJECTION_CHECK_MS = 200;
 const SLOW_POSITION_METRICS_MS = 500;
 
+interface FutureIncomeProjectionMetadata {
+  shouldProject: boolean;
+  checkedAt?: string;
+}
+
 function getProtocolKeyFromPosition(position?: Position): string | undefined {
   if (!position) {
     return undefined;
@@ -45,6 +51,54 @@ function getProtocolKeyFromPosition(position?: Position): string | undefined {
   const rowProtocolKey = (position as Position & { protocol_key?: string }).protocol_key;
 
   return metadataProtocolKey || rowProtocolKey;
+}
+
+function getCachedFutureIncomeProjection(position?: Position): boolean | null {
+  if (!position || !position.metadata || typeof position.metadata !== 'object') {
+    return null;
+  }
+
+  const metadata = position.metadata as Record<string, unknown>;
+  const projection = metadata.futureIncomeProjection;
+  if (!projection || typeof projection !== 'object') {
+    return null;
+  }
+
+  const { shouldProject } = projection as FutureIncomeProjectionMetadata;
+  return typeof shouldProject === 'boolean' ? shouldProject : null;
+}
+
+async function refreshFutureIncomeProjection(
+  position: Position,
+  protocolKey: string,
+  adapter: ReturnType<typeof getAdapter>
+): Promise<boolean | null> {
+  if (
+    typeof adapter.shouldProjectFutureIncome !== 'function' ||
+    adapter.shouldProjectFutureIncome === BaseProtocolAdapter.prototype.shouldProjectFutureIncome
+  ) {
+    return null;
+  }
+
+  try {
+    const projectionCheckStart = Date.now();
+    const shouldProjectFutureIncome = await adapter.shouldProjectFutureIncome(position);
+    const projectionCheckDurationMs = Date.now() - projectionCheckStart;
+    if (projectionCheckDurationMs >= SLOW_PROJECTION_CHECK_MS) {
+      console.warn(
+        `[metrics] Slow future-income projection check for ${position.id} (${protocolKey}): ${projectionCheckDurationMs}ms`
+      );
+    }
+
+    await updatePositionFutureIncomeProjection(position.id, shouldProjectFutureIncome, new Date());
+    return shouldProjectFutureIncome;
+  } catch (error) {
+    console.warn(
+      `[metrics] Failed to refresh future-income projection status for ${position.id} (${protocolKey}):`,
+      error
+    );
+    return null;
+  }
 }
 
 
@@ -137,6 +191,8 @@ export async function updatePosition(position: Position): Promise<void> {
     if (await maybeArchiveClosedRewardPosition(currentValue)) {
       return;
     }
+
+    await refreshFutureIncomeProjection(position, protocolKey, adapter);
 
     // CASE 1: Complete Exit Detection (value < $10 threshold)
     if (currentValue < 10 && latestSnapshot) {
@@ -461,7 +517,8 @@ export async function getPositionMetrics(positionId: string, position?: Position
   let apy = null;
   let apy7d = null;
   let apy30d = null;
-  let shouldProjectFutureIncome = true;
+  const cachedProjection = getCachedFutureIncomeProjection(position);
+  let shouldProjectFutureIncome = cachedProjection ?? true;
 
   const isFixedIncome = getPositionCategory(position?.measureMethod ?? '') === 'fixed-income';
 
@@ -486,28 +543,6 @@ export async function getPositionMetrics(positionId: string, position?: Position
     apy = result4h?.apy ?? null;
     apy7d = (result7d && result7d.windowHours > 24) ? result7d.apy : null;
     apy30d = (result30d && result30d.windowHours > 240) ? result30d.apy : null;
-  }
-
-  if (position && protocolKey) {
-    try {
-      const adapter = getAdapter(protocolKey as ProtocolKey);
-      if (typeof adapter.shouldProjectFutureIncome === 'function') {
-        const projectionCheckStart = Date.now();
-        shouldProjectFutureIncome = await adapter.shouldProjectFutureIncome(position);
-        const projectionCheckDurationMs = Date.now() - projectionCheckStart;
-        if (projectionCheckDurationMs >= SLOW_PROJECTION_CHECK_MS) {
-          console.warn(
-            `[metrics] Slow future-income projection check for ${position.id} (${protocolKey}): ${projectionCheckDurationMs}ms`
-          );
-        }
-      }
-    } catch (error) {
-      console.warn(
-        `[metrics] Failed to determine future-income projection status for ${position.id} (${protocolKey}):`,
-        error
-      );
-      shouldProjectFutureIncome = true;
-    }
   }
 
   const result: PositionMetrics = {
