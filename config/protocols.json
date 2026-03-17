@@ -303,6 +303,24 @@
       "ERC4626"
     ]
   },
+  "uniswap-v3-wbtc-usdc-arbitrum-rewards": {
+    "name": "Uniswap v3 WBTC/USDC (Arbitrum)",
+    "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+    "currency0": "0x2f2a2543B76A4166549F7aab2e75Bef0aefC5B0f",
+    "currency1": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "currency0Symbol": "WBTC",
+    "currency1Symbol": "USDC",
+    "currency0Decimals": 8,
+    "currency1Decimals": 6,
+    "rewardToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "rewardDecimals": 6,
+    "baseAsset": "USDC",
+    "type": "lp-position",
+    "countingMode": "partial",
+    "abiKeys": [
+      "UniswapV3NonfungiblePositionManager"
+    ]
+  },
   "uniswap-v3-wbtc-usdt-arbitrum-rewards": {
     "name": "Uniswap v3 WBTC/USDT (Arbitrum)",
     "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",

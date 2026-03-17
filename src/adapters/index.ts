@@ -10,6 +10,7 @@ import { InfinifiLiusd4wAdapter } from './infinifi-liusd-4w';
 import { YearnV3Adapter } from './yearn-v3';
 import { UniswapV4Adapter } from './uniswap-v4';
 import { UniswapV3WbtcUsdtArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdt-arbitrum-rewards';
+import { UniswapV3WbtcUsdcArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdc-arbitrum-rewards';
 import { UniswapV4WbtcUsdcRewardsAdapter } from './uniswap-v4-wbtc-usdc-rewards';
 import { UniswapV3WethUsdcArbitrumRewardsAdapter } from './uniswap-v3-weth-usdc-arbitrum-rewards';
 import { UniswapV3PaxgUsdcEthereumRewardsAdapter } from './uniswap-v3-paxg-usdc-ethereum-rewards';
@@ -48,6 +49,7 @@ export {
   YearnV3Adapter,
   UniswapV4Adapter,
   UniswapV3WbtcUsdtArbitrumRewardsAdapter,
+  UniswapV3WbtcUsdcArbitrumRewardsAdapter,
   UniswapV4WbtcUsdcRewardsAdapter,
   UniswapV3WethUsdcArbitrumRewardsAdapter,
   UniswapV3PaxgUsdcEthereumRewardsAdapter,
