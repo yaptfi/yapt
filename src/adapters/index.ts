@@ -14,6 +14,7 @@ import { UniswapV3WbtcUsdcArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdc-
 import { UniswapV4WbtcUsdcRewardsAdapter } from './uniswap-v4-wbtc-usdc-rewards';
 import { UniswapV3WethUsdcArbitrumRewardsAdapter } from './uniswap-v3-weth-usdc-arbitrum-rewards';
 import { UniswapV3PaxgUsdcEthereumRewardsAdapter } from './uniswap-v3-paxg-usdc-ethereum-rewards';
+import { UniswapV3WethUsdcEthereumRewardsAdapter } from './uniswap-v3-weth-usdc-ethereum-rewards';
 import { UniswapV3UsdtUsdcArbitrumAdapter } from './uniswap-v3-usdt-usdc-arbitrum';
 import { PendlePtAdapter } from './pendle-pt';
 import { ProtocolKey } from '../types';
@@ -53,6 +54,7 @@ export {
   UniswapV4WbtcUsdcRewardsAdapter,
   UniswapV3WethUsdcArbitrumRewardsAdapter,
   UniswapV3PaxgUsdcEthereumRewardsAdapter,
+  UniswapV3WethUsdcEthereumRewardsAdapter,
   UniswapV3UsdtUsdcArbitrumAdapter,
   PendlePtAdapter,
 };

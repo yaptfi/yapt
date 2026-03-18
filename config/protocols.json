@@ -358,6 +358,24 @@
       "UniswapV3NonfungiblePositionManager"
     ]
   },
+  "uniswap-v3-weth-usdc-ethereum-rewards": {
+    "name": "Uniswap v3 WETH/USDC (Ethereum)",
+    "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+    "currency0": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "currency1": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "currency0Symbol": "USDC",
+    "currency1Symbol": "WETH",
+    "currency0Decimals": 6,
+    "currency1Decimals": 18,
+    "rewardToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "rewardDecimals": 6,
+    "baseAsset": "USDC",
+    "type": "lp-position",
+    "countingMode": "partial",
+    "abiKeys": [
+      "UniswapV3NonfungiblePositionManager"
+    ]
+  },
   "uniswap-v4-usdc-usdt": {
     "name": "Uniswap v4 USDC/USDT",
     "positionManager": "0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e",
