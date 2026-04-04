@@ -17,6 +17,7 @@ interface PositionRow {
   countingMode: string;
   measureMethod: string;
   isActive: boolean;
+  metadata?: Record<string, unknown>;
   valueUsd: number;
   apy: number | null;
   apy7d: number | null;
@@ -84,7 +85,8 @@ export default async function guestRoutes(server: FastifyInstance) {
             base_asset as "baseAsset",
             counting_mode as "countingMode",
             measure_method as "measureMethod",
-            is_active as "isActive"
+            is_active as "isActive",
+            metadata
            FROM position
            WHERE wallet_id = $1 AND is_active = true
            ORDER BY display_name`,
