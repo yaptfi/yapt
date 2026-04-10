@@ -300,8 +300,11 @@ export class UniswapV3WbtcUsdcArbitrumRewardsAdapter extends BaseProtocolAdapter
     let owner: string;
     try {
       owner = await contract.ownerOf(tokenIdBigInt);
-    } catch {
-      return true;
+    } catch (error: any) {
+      if (error?.code === 'CALL_EXCEPTION') {
+        return true;
+      }
+      throw error;
     }
 
     // Moved to another wallet -> treat as closed for this tracked wallet.

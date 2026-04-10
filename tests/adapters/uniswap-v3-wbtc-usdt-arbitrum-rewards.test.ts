@@ -254,7 +254,7 @@ describe('UniswapV3WbtcUsdtArbitrumRewardsAdapter', () => {
 
   it('marks position as closed when the NFT token no longer exists', async () => {
     const manager = {
-      ownerOf: jest.fn().mockRejectedValue(new Error('ERC721: invalid token ID')),
+      ownerOf: jest.fn().mockRejectedValue(Object.assign(new Error('ERC721: invalid token ID'), { code: 'CALL_EXCEPTION' })),
       positions: jest.fn(),
       collect: {
         staticCall: jest.fn(),

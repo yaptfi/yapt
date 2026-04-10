@@ -425,8 +425,11 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
     let owner: string;
     try {
       owner = await positionManagerContract.ownerOf(BigInt(tokenId));
-    } catch {
-      return true;
+    } catch (error: any) {
+      if (error?.code === 'CALL_EXCEPTION') {
+        return true;
+      }
+      throw error;
     }
 
     if (owner.toLowerCase() !== checksumAddress.toLowerCase()) {
