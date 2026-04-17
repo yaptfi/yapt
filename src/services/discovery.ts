@@ -7,6 +7,7 @@ import { toChecksumAddress } from '../utils/ethereum';
 import { sleep } from '../utils/async';
 import { DISCOVERY_SLEEP_MS } from '../constants';
 import { getPositionCategory } from '../utils/position-category';
+import { refreshFutureIncomeProjection } from './update';
 
 export type DiscoveryProgressCallback = (event: {
   type: 'start' | 'protocol_start' | 'position_found' | 'protocol_complete' | 'complete' | 'error';
@@ -454,6 +455,10 @@ async function discoverSingleAdapter(
               0, // Initial snapshot has no yield delta
               null // No APY for first snapshot
             );
+
+            // Seed the future-income projection cache so API metrics reflect
+            // correct shouldProjectFutureIncome before the first hourly update.
+            await refreshFutureIncomeProjection(position, adapter.protocolKey, adapter);
 
             // Notify about found position if callback provided
             if (onProgress) {

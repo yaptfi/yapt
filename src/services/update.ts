@@ -68,7 +68,7 @@ function getCachedFutureIncomeProjection(position?: Position): boolean | null {
   return typeof shouldProject === 'boolean' ? shouldProject : null;
 }
 
-async function refreshFutureIncomeProjection(
+export async function refreshFutureIncomeProjection(
   position: Position,
   protocolKey: string,
   adapter: ReturnType<typeof getAdapter>

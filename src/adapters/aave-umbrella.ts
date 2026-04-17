@@ -163,13 +163,15 @@ export class AaveUmbrellaAdapter extends BaseProtocolAdapter {
       console.log(`${this.protocolName}: Reward ${i}: ${rewardSymbol} (${rewardTokens[i]}) = ${rewardAmount.toFixed(4)} USD`);
     }
 
-    const totalValue = principalAmount + totalRewards;
+    // Principal is denominated in baseAsset and must be priced.
+    // Rewards are already summed in USD (assuming $1/token), so do not re-price them.
+    const totalValueUsd = principalAmount * priceUsd + totalRewards;
 
     console.log(
-      `${this.protocolName}: ${formatUnits(stakedBalance, decimals)} staked → ${principalAmount.toFixed(2)} ${baseAsset} principal + ${totalRewards.toFixed(2)} rewards = ${totalValue.toFixed(2)} ${baseAsset} total`
+      `${this.protocolName}: ${formatUnits(stakedBalance, decimals)} staked → ${principalAmount.toFixed(2)} ${baseAsset} principal + $${totalRewards.toFixed(2)} rewards = $${totalValueUsd.toFixed(2)}`
     );
 
-    return totalValue * priceUsd;
+    return totalValueUsd;
   }
 
   async calcNetFlows(

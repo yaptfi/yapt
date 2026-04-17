@@ -134,12 +134,9 @@ export default async function portfolioRoutes(server: FastifyInstance) {
       const { walletIds } = request.query;
 
       // Parse wallet IDs if provided and filter to only user's wallets
-      let walletIdList = walletIds
-        ? walletIds.split(',').filter(id => id.trim() && userWalletIds.includes(id.trim()))
+      const walletIdList = walletIds
+        ? walletIds.split(',').map((id) => id.trim()).filter((id) => id && userWalletIds.includes(id))
         : userWalletIds;
-
-      // Ensure we only use user's wallets
-      walletIdList = walletIdList.filter(id => userWalletIds.includes(id));
 
       if (walletIdList.length === 0) {
         return reply.send({ history: [] });
