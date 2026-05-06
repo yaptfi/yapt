@@ -235,11 +235,11 @@ describe('UniswapV3WbtcUsdtArbitrumRewardsAdapter', () => {
     expect(collectStaticCall).not.toHaveBeenCalled();
   });
 
-  it('marks position as closed when liquidity and claimable fees are zero', async () => {
-    const collectStaticCall = jest.fn().mockResolvedValue([0n, 0n]);
+  it('marks position as closed when liquidity is zero', async () => {
+    const collectStaticCall = jest.fn();
     const manager = {
       ownerOf: jest.fn().mockResolvedValue('0xabc0000000000000000000000000000000000000'),
-      positions: jest.fn().mockResolvedValue({ liquidity: 0n, tokensOwed0: 0n, tokensOwed1: 0n }),
+      positions: jest.fn().mockResolvedValue({ liquidity: 0n }),
       collect: {
         staticCall: collectStaticCall,
       },
@@ -250,6 +250,29 @@ describe('UniswapV3WbtcUsdtArbitrumRewardsAdapter', () => {
     const isClosed = await adapter.isPositionClosed(POSITION);
 
     expect(isClosed).toBe(true);
+    expect(collectStaticCall).not.toHaveBeenCalled();
+  });
+
+  it('marks position as closed even when non-reward dust remains', async () => {
+    // Regression: previously, residual tokensOwed on the non-reward token leg
+    // (e.g., 1 wei of WBTC after a sub-MAX collect) kept the position active
+    // forever. Once liquidity is 0, no future fees can accrue, so the
+    // position must be archivable regardless of leftover dust.
+    const collectStaticCall = jest.fn();
+    const manager = {
+      ownerOf: jest.fn().mockResolvedValue('0xabc0000000000000000000000000000000000000'),
+      positions: jest.fn().mockResolvedValue({ liquidity: 0n, tokensOwed0: 12345n, tokensOwed1: 0n }),
+      collect: {
+        staticCall: collectStaticCall,
+      },
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3WbtcUsdtArbitrumRewardsAdapter();
+    const isClosed = await adapter.isPositionClosed(POSITION);
+
+    expect(isClosed).toBe(true);
+    expect(collectStaticCall).not.toHaveBeenCalled();
   });
 
   it('marks position as closed when the NFT token no longer exists', async () => {

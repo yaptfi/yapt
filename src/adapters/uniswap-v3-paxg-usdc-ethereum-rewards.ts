@@ -318,35 +318,10 @@ export class UniswapV3PaxgUsdcEthereumRewardsAdapter extends BaseProtocolAdapter
       7,
       'liquidity'
     ) ?? 0n) as bigint | number | string);
-    if (liquidity > 0n) {
-      return false;
-    }
-
-    const collectResult = await contract.collect.staticCall(
-      {
-        tokenId: tokenIdBigInt,
-        recipient: checksumAddress,
-        amount0Max: MAX_UINT128,
-        amount1Max: MAX_UINT128,
-      },
-      { from: checksumAddress }
-    );
-
-    const amount0Raw = Array.isArray(collectResult) ? collectResult[0] : collectResult.amount0;
-    const amount1Raw = Array.isArray(collectResult) ? collectResult[1] : collectResult.amount1;
-    const amount0 = BigInt(amount0Raw ?? 0n);
-    const amount1 = BigInt(amount1Raw ?? 0n);
-    const owed0 = BigInt((getUniswapV3PositionField(
-      positionInfo as unknown as RawUniswapV3PositionInfo,
-      10,
-      'tokensOwed0'
-    ) ?? 0n) as bigint | number | string);
-    const owed1 = BigInt((getUniswapV3PositionField(
-      positionInfo as unknown as RawUniswapV3PositionInfo,
-      11,
-      'tokensOwed1'
-    ) ?? 0n) as bigint | number | string);
-
-    return amount0 === 0n && amount1 === 0n && owed0 === 0n && owed1 === 0n;
+    // Liquidity = 0 means no future fees can ever accrue on this NFT, so the
+    // rewards adapter has nothing left to track. Any tokensOwed dust on the
+    // non-reward token is irrelevant — readCurrentValue ignores it, and the
+    // user can collect it on their own time.
+    return liquidity === 0n;
   }
 }
