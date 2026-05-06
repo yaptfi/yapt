@@ -25,6 +25,12 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.prod.yml down
         continue-on-error: true
 
+      - name: Compute build metadata
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          echo "GIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+
       - name: Build Docker images
         working-directory: ${{ env.DEPLOY_DIR }}
         run: |

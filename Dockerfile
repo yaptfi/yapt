@@ -20,6 +20,12 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Build metadata (passed via --build-arg in CI; defaults keep local builds working)
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+ENV GIT_SHA=$GIT_SHA
+ENV BUILD_TIME=$BUILD_TIME
+
 # Install production dependencies only
 COPY package*.json ./
 RUN npm ci --only=production

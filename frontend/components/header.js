@@ -111,6 +111,22 @@ async function handleLogout() {
   }
 }
 
+// Fetch backend version once and inject into any #app-version element
+async function loadAppVersion() {
+  const el = document.getElementById('app-version');
+  if (!el) return;
+  try {
+    const API_BASE = window.APP_CONFIG?.apiBase || '/api';
+    const response = await fetch(`${API_BASE}/version`);
+    if (!response.ok) return;
+    const { version, gitSha } = await response.json();
+    el.textContent = `v${version} · ${gitSha}`;
+    el.title = `version ${version} · ${gitSha}`;
+  } catch (error) {
+    console.warn('Failed to load app version:', error);
+  }
+}
+
 // Load header HTML dynamically
 async function loadHeader() {
   const headerPlaceholder = document.getElementById('header-placeholder');
@@ -138,8 +154,13 @@ window.handleHeaderRegister = handleHeaderRegister;
 window.handleLogout = handleLogout;
 
 // Initialize on page load
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', loadHeader);
-} else {
+function initOnLoad() {
   loadHeader();
+  loadAppVersion();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initOnLoad);
+} else {
+  initOnLoad();
 }

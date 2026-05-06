@@ -51,6 +51,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     ports:
       - "3000:3000"
       - "3443:3443" # HTTPS API

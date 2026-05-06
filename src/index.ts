@@ -26,6 +26,7 @@ import guestRoutes from './routes/guest';
 import notificationRoutes from './routes/notifications';
 import stablecoinsRoutes from './routes/stablecoins';
 import protocolsRoutes from './routes/protocols';
+import versionRoutes, { APP_VERSION, GIT_SHA, BUILD_TIME } from './routes/version';
 
 const PORT = parseInt(getEnvVar('PORT', '3000'));
 const SESSION_SECRET = getEnvVar('SESSION_SECRET');
@@ -364,11 +365,17 @@ async function start() {
     await server.register(notificationRoutes, { prefix: '/api/notifications' });
     await server.register(stablecoinsRoutes, { prefix: '/api/stablecoins' });
     await server.register(protocolsRoutes, { prefix: '/api/protocols' });
+    await server.register(versionRoutes, { prefix: '/api/version' });
 
     // Health check
     server.get('/health', async () => {
       return { status: 'ok', timestamp: new Date().toISOString() };
     });
+
+    server.log.info(
+      { version: APP_VERSION, gitSha: GIT_SHA, buildTime: BUILD_TIME },
+      'yapt api starting',
+    );
 
     // Initialize scheduler
     await initializeScheduler();
