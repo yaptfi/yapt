@@ -276,6 +276,25 @@ describe('UniswapV3WethUsdcArbitrumRewardsAdapter', () => {
     expect(manager.positions).not.toHaveBeenCalled();
   });
 
+  it('returns false (inconclusive) instead of throwing when positions() fails', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const manager = {
+      ownerOf: jest.fn().mockResolvedValue('0xabc0000000000000000000000000000000000000'),
+      positions: jest.fn().mockRejectedValue(new Error('RPC timeout')),
+      collect: {
+        staticCall: jest.fn(),
+      },
+    };
+    (getContract as jest.Mock).mockReturnValue(manager);
+
+    const adapter = new UniswapV3WethUsdcArbitrumRewardsAdapter();
+    const isClosed = await adapter.isPositionClosed(POSITION);
+
+    expect(isClosed).toBe(false);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
   it('throws when Arbitrum provider is unavailable during value reads', async () => {
     (getProviderForChain as jest.Mock).mockImplementation(() => {
       throw new Error('provider unavailable');

@@ -1,7 +1,7 @@
 import { getAdapter } from '../plugins/registry';
 import { BaseProtocolAdapter } from '../sdk/adapter';
 import { Position, ProtocolKey, PositionSnapshot } from '../types';
-import { getLatestSnapshot, createSnapshot, getTotalYieldSince, getSnapshotNearTime, getMostRecentResetSnapshot } from '../models/snapshot';
+import { getLatestSnapshot, createSnapshot, getTotalYieldSince, getSnapshotNearTime, getMostRecentResetSnapshot, getSnapshotsSince } from '../models/snapshot';
 import { computeApy } from '../utils/apy';
 import { archivePosition, updatePositionFutureIncomeProjection } from '../models/position';
 import { sleep } from '../utils/async';
@@ -35,6 +35,19 @@ export interface PositionMetrics {
 
 const SLOW_PROJECTION_CHECK_MS = 200;
 const SLOW_POSITION_METRICS_MS = 500;
+
+// Stale-rewards archive thresholds (Part 2 snapshot-history fallback).
+const STALE_REWARD_WINDOW_HOURS = 24;
+const STALE_REWARD_MIN_SNAPSHOTS = 6;
+
+async function isStaleZeroValueRewards(positionId: string, now: Date): Promise<boolean> {
+  const since = new Date(now.getTime() - STALE_REWARD_WINDOW_HOURS * 60 * 60 * 1000);
+  const recent = await getSnapshotsSince(positionId, since);
+  if (recent.length < STALE_REWARD_MIN_SNAPSHOTS) {
+    return false;
+  }
+  return recent.every((snapshot) => parseFloat(snapshot.value_usd) === 0);
+}
 
 interface FutureIncomeProjectionMetadata {
   shouldProject: boolean;
@@ -173,7 +186,14 @@ export async function updatePosition(position: Position): Promise<void> {
         return true;
       }
     } catch (closeCheckError) {
-      console.warn(`  Failed to verify reward position closure for ${position.id}:`, closeCheckError);
+      // Failures here keep stuck-but-closed positions alive forever, so log
+      // loudly with enough context to triage. Conservative path: don't archive
+      // on uncertainty; rely on the snapshot-history fallback in CASE 1.
+      console.error(
+        `  Failed to verify reward position closure for ${position.id} ` +
+        `(protocol=${protocolKey}, currentValue=${currentValue}):`,
+        closeCheckError
+      );
     }
 
     return false;
@@ -198,6 +218,21 @@ export async function updatePosition(position: Position): Promise<void> {
     if (currentValue < 10 && latestSnapshot) {
       // Reward positions: zero value is normal (rewards claimed)
       if (positionCategory === 'rewards') {
+        // Safety net for the on-chain closure probe: if a rewards position has
+        // been at $0 for the full STALE_REWARD_WINDOW_HOURS window, archive it
+        // regardless of whether isPositionClosed could confirm closure. This
+        // catches NFTs whose closure probe keeps failing on transient RPC
+        // errors, and abandoned positions with dust liquidity sitting in the
+        // pool. Requires a minimum snapshot count so we don't archive newly
+        // discovered positions before they've had a chance to accrue.
+        if (currentValue === 0 && await isStaleZeroValueRewards(position.id, calcStartTime)) {
+          console.log(
+            `  Reward position at $0 for >=${STALE_REWARD_WINDOW_HOURS}h ` +
+            `(min ${STALE_REWARD_MIN_SNAPSHOTS} snapshots) - archiving as stale`
+          );
+          await archivePosition(position.id, 'complete_exit');
+          return;
+        }
         console.log(`  Reward position at $${currentValue.toFixed(2)} (rewards claimed) - creating normal snapshot`);
         await createSnapshot(position.id, new Date(), currentValue, 0, 0, null);
         return;

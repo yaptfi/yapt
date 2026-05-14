@@ -436,15 +436,25 @@ export class UniswapV4WbtcUsdcRewardsAdapter extends BaseProtocolAdapter {
       return true;
     }
 
-    const { liquidity } = await this.getPositionInfo(
-      provider,
-      stateView,
-      positionManager,
-      poolId,
-      tickLower,
-      tickUpper,
-      tokenId
-    );
+    let liquidity: bigint;
+    try {
+      ({ liquidity } = await this.getPositionInfo(
+        provider,
+        stateView,
+        positionManager,
+        poolId,
+        tickLower,
+        tickUpper,
+        tokenId
+      ));
+    } catch (error) {
+      console.error(
+        `[${this.protocolName}] getPositionInfo failed during closure check ` +
+        `(tokenId=${tokenId}, wallet=${checksumAddress}); treating as inconclusive:`,
+        error
+      );
+      return false;
+    }
 
     return liquidity === 0n;
   }

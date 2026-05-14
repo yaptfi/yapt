@@ -312,16 +312,22 @@ export class UniswapV3WbtcUsdcArbitrumRewardsAdapter extends BaseProtocolAdapter
       return true;
     }
 
-    const positionInfo = await contract.positions(tokenIdBigInt);
-    const liquidity = BigInt((getUniswapV3PositionField(
-      positionInfo as unknown as RawUniswapV3PositionInfo,
-      7,
-      'liquidity'
-    ) ?? 0n) as bigint | number | string);
-    // Liquidity = 0 means no future fees can ever accrue on this NFT, so the
-    // rewards adapter has nothing left to track. Any tokensOwed dust on the
-    // non-reward token is irrelevant — readCurrentValue ignores it, and the
-    // user can collect it on their own time.
+    let liquidity: bigint;
+    try {
+      const positionInfo = await contract.positions(tokenIdBigInt);
+      liquidity = BigInt((getUniswapV3PositionField(
+        positionInfo as unknown as RawUniswapV3PositionInfo,
+        7,
+        'liquidity'
+      ) ?? 0n) as bigint | number | string);
+    } catch (error) {
+      console.error(
+        `[${this.protocolName}] positions(${tokenIdBigInt}) failed during closure check ` +
+        `(wallet=${checksumAddress}); treating as inconclusive:`,
+        error
+      );
+      return false;
+    }
     return liquidity === 0n;
   }
 }
