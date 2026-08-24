@@ -6,6 +6,7 @@ function createManager(hasScanCapableProviders: boolean) {
     hasScanCapableProviders: jest.fn().mockReturnValue(hasScanCapableProviders),
     send: jest.fn().mockResolvedValue('normal-result'),
     sendScan: jest.fn().mockResolvedValue('scan-result'),
+    getScanCapableProviderCount: jest.fn().mockReturnValue(hasScanCapableProviders ? 1 : 0),
     getStatus: jest.fn().mockReturnValue([]),
     getQueueStatus: jest.fn().mockReturnValue({}),
     getENSCapableProvider: jest.fn().mockReturnValue(null),

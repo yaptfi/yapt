@@ -626,7 +626,18 @@
           });
         }
 
-        container.innerHTML = `
+        const ethScanCount = status?.ethereum?.scanCapableProviderCount ?? 0;
+        const arbScanCount = status?.arbitrum?.scanCapableProviderCount ?? 0;
+        const scanRoutingSummary = `
+          <div class="rpc-help" style="margin-bottom: 1rem;">
+            <strong>Active historical-scan routes:</strong>
+            Ethereum ${ethScanCount} provider${ethScanCount === 1 ? '' : 's'};
+            Arbitrum ${arbScanCount} provider${arbScanCount === 1 ? '' : 's'}.
+            ${arbScanCount < 2 ? '<strong>Arbitrum scan failover is unavailable.</strong>' : 'Arbitrum scan failover is available.'}
+          </div>
+        `;
+
+        container.innerHTML = `${scanRoutingSummary}
           <table style="table-layout: fixed; width: 100%;">
             <colgroup>
               <col style="width: 10%;">

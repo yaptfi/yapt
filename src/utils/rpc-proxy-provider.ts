@@ -60,6 +60,7 @@ export class RPCProxyProvider extends JsonRpcProvider {
     return {
       providers: this.rpcManager.getStatus(),
       queue: this.rpcManager.getQueueStatus(),
+      scanCapableProviderCount: this.rpcManager.getScanCapableProviderCount(),
     };
   }
 

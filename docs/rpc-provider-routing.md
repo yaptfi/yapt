@@ -1,327 +1,191 @@
-# RPC Provider-Specific Routing
+# RPC Provider Routing
 
-## Overview
+## Purpose
 
-The RPC manager supports **provider-specific routing** for historical
-`eth_getLogs` calls. Providers may impose different block-range, throughput,
-and daily-credit limits, so discovery adapts its range and can fail over.
+Yapt routes ordinary RPC reads and historical log scans differently. Historical
+`eth_getLogs` calls are more expensive, have provider-specific range limits, and
+are more likely to exhaust throughput or daily credits. The scan path therefore
+needs capability filtering, pacing, adaptive ranges, and failover.
 
-## The Problem
+## Routing architecture
 
-**Example provider limitation:**
-```
-Error: Under the Free tier plan, you can make eth_getLogs requests with
-up to a 10 block range.
-```
+### Normal calls
 
-**Why This Matters:**
-- Uniswap v4 adapter needs to scan Transfer events to find NFT positions
-- Historical scans may need to cover 100k+ blocks
-- With a 10 block limit: scanning 100k blocks = 10,000 requests
-- Range adaptation alone does not solve throughput or daily-credit exhaustion
+`getProviderForChain()` returns an `RPCProxyProvider` backed by `RPCManager`.
+Normal calls may use every active provider configured for that chain and receive:
 
-## Solution: Capability-Based Routing
+- token-bucket rate limiting;
+- round-robin distribution;
+- health tracking and temporary provider backoff;
+- automatic failover when another provider is available;
+- configured daily-call accounting.
 
-### 1. Provider Configuration
+### Historical scans
 
-Each RPC provider now has a `supportsLargeBlockScans` flag:
+Adapters obtain a provider with `getScanCapableProviderForChain(chainId)`. For a
+managed chain this is a stable scan-only view of the same `RPCManager`, not a
+direct underlying `JsonRpcProvider`.
 
-```typescript
-interface RPCProviderConfig {
-  id?: number;
-  name: string;
-  url: string;
-  callsPerSecond: number;
-  callsPerDay?: number;
-  priority: number;
-  isActive: boolean;
-  supportsLargeBlockScans?: boolean; // NEW!
-}
-```
+Every call made through that view—including `getBlockNumber`, fixed-block
+contract reads, and `eth_getLogs`—uses only providers with
+`supportsLargeBlockScans=true`. It retains the normal queue, rate limiting,
+health tracking, and failover behavior.
 
-Set the flag to `true` when the endpoint supports historical `eth_getLogs`.
-The scanner automatically reduces rejected ranges, including 10,000-block
-limits. Set it to `false` only when the endpoint cannot reliably serve
-historical logs; those providers remain available for normal contract reads.
+Do not bypass this path by extracting an underlying provider. Doing so bypasses
+configured pacing and makes additional RPC servers ineffective for discovery.
 
-### 2. Database Schema
+### Transport invariants
 
-Migration `1733000030000_add-rpc-supports-large-block-scans.js` adds:
+Managed providers are created with:
 
-```sql
-ALTER TABLE rpc_provider
-  ADD COLUMN supports_large_block_scans BOOLEAN NOT NULL DEFAULT true;
-```
+- `batchMaxCount: 1`, because some vendors return an id-less throttle error for
+  one item in a JSON-RPC batch; ethers otherwise surfaces the mixed response as
+  `BAD_DATA: missing response for request`;
+- a pinned static network, because Yapt already knows the chain for each manager
+  and does not need repeated `eth_chainId` probes.
 
-**Default:** `true` (backwards compatible - assumes providers support large scans)
+These settings are intentional. Preserve them when changing provider creation.
 
-### 3. RPC Manager API
+## Capability semantics
 
-Scan calls use a dedicated managed queue:
+The database field is `supports_large_block_scans`; TypeScript and API responses
+use `supportsLargeBlockScans`.
 
-```typescript
-class RPCManager {
-  sendScan(method: string, params: unknown[]): Promise<unknown>;
-  hasScanCapableProviders(): boolean;
-}
-```
+Set it to `true` when an endpoint can reliably serve historical `eth_getLogs`.
+It does not mean the endpoint accepts unlimited ranges. A provider limited to
+10,000 blocks can remain enabled because the Uniswap v4 scanner adapts its range.
 
-`sendScan()` uses only providers with `supportsLargeBlockScans=true`, while
-retaining token-bucket pacing, health tracking, and automatic failover.
+Set it to `false` when an endpoint cannot serve the required historical logs.
+It will remain available for normal contract reads but will not receive scan
+traffic.
 
-### 4. Adapter Usage
+The column is added by
+`migrations/1733000030000_add-rpc-supports-large-block-scans.js`.
 
-Uniswap v4 adapter now uses scan-capable provider:
+## Uniswap v4 inventory scan
 
-```typescript
-async discover(walletAddress: string): Promise<Partial<Position>[]> {
-  const scanProvider = getScanCapableProviderForChain(config.chainId);
-  if (!scanProvider) {
-    console.warn('[Uniswap v4] No scan-capable RPC provider available');
-    return [];
-  }
+`src/utils/uniswap-v4-inventory.ts` performs one shared inventory scan for all v4
+adapters using the same wallet, Position Manager, start block, and provider.
 
-  // Use scan-capable provider for event queries
-  const positionManager = new ethers.Contract(
-    config.positionManager,
-    positionManagerAbi,
-    scanProvider // <-- Uses scan-capable provider
-  );
+The scanner:
 
-  // The shared inventory scanner walks backward in adaptive chunks.
-  const inventory = await getWalletUniswapV4Inventory(/* ... */);
+1. Gets one latest block and uses it as the block tag for the inventory read.
+2. Reads the wallet's Position Manager `balanceOf` at that block.
+3. Returns immediately for a zero balance.
+4. Scans incoming NFT `Transfer` events newest-to-oldest.
+5. Starts with `UNISWAP_V4_SCAN_CHUNK_SIZE` (default 50,000 blocks).
+6. Uses a provider-reported block limit when available; otherwise halves a
+   rejected range until accepted.
+7. Retries transient throttles with backoff. Error parsing must inspect nested
+   ethers fields, including `error`, `info`, `data`, and `value[]`.
+8. Deduplicates token IDs and verifies `ownerOf` at the fixed latest block.
+9. Stops as soon as the number of verified NFTs equals `balanceOf`.
+10. Throws an explicit mismatch if configured history is exhausted first.
 
-  // ... rest of discovery logic
-}
-```
+Successful inventories are cached for 60 seconds. Terminal scan failures are
+cached briefly so sibling adapters do not immediately repeat the same failure.
 
-## Admin UI
+## Configuration
 
-### Adding Providers
+### Admin UI / database
 
-Form includes checkbox for "Supports Large Block Scans":
+Each provider row contains a required Ethereum URL and an optional Arbitrum URL.
+A row participates in Arbitrum routing only when its Arbitrum URL is present.
 
-```html
-<input type="checkbox" id="providerSupportsLargeScans" checked>
-<label>Supports Large Block Scans</label>
-<div>Uncheck for Alchemy free tier (10 block limit).
-     Keep checked for Infura/QuickNode.</div>
-```
+For a historical-log provider:
 
-### Provider Table
+- keep it active;
+- supply the URL for every chain it should serve;
+- enable **Historical Block Scans**;
+- set `callsPerSecond` conservatively and below the vendor quota;
+- set `callsPerDay` when the plan has a known daily allowance.
 
-Shows capability status:
+Creating or editing providers through the admin API reloads the in-process
+provider managers automatically.
 
-| Name | URL | Capabilities | Status |
-|------|-----|--------------|--------|
-| Infura | https://mainnet.infura... | ✓ Block Scans | Healthy |
-| Alchemy | https://eth-mainnet.g.alch... | ⚠ Limited Scans | Healthy |
+The admin provider table reports the active historical-scan route count for each
+chain. A count of `1` means scans can run but cannot fail over; a count of `2` or
+more means scan failover is available. Startup logs report the same count, and a
+successful fallback logs the backup provider name without its URL.
 
-## Behavior
+### Environment configuration
 
-### Normal RPC Calls (balance checks, contract calls)
+The equivalent multi-provider variables are:
 
-**Load balanced across ALL providers** (regardless of `supportsLargeBlockScans`):
-- Round-robin selection
-- Rate limiting via token buckets
-- Automatic failover on errors
+```dotenv
+ETH_RPC_URLS=https://provider-a.example/eth,https://provider-b.example/eth
+ETH_RPC_LIMITS=1,1
+ETH_RPC_SCAN_CAPABILITIES=true,true
 
-### Block Scanning Calls (eth_getLogs, queryFilter)
-
-**Routed ONLY to scan-capable providers**:
-- Filters to providers with `supportsLargeBlockScans=true`
-- Uses the RPC manager's token-bucket pacing
-- Load balances and fails over across all healthy scan-capable providers
-- Disables ethers request batching to isolate provider throttle responses
-- Pins the configured chain to avoid redundant `eth_chainId` probes
-
-### Graceful Degradation
-
-If no scan-capable providers available:
-```typescript
-if (!scanProvider) {
-  console.warn('[Uniswap v4] No scan-capable RPC provider available');
-  console.warn('[Uniswap v4] Configure an RPC provider with supportsLargeBlockScans=true');
-  return []; // Skip protocol discovery
-}
+ARBITRUM_RPC_URLS=https://provider-a.example/arb,https://provider-b.example/arb
+ARBITRUM_RPC_LIMITS=1,1
+ARBITRUM_RPC_SCAN_CAPABILITIES=true,true
 ```
 
-## Configuration Examples
+Active database providers for a chain take precedence over that chain's
+environment configuration.
 
-### Infura + Alchemy Setup
+## Reliability recommendations
 
-**Infura (scan-capable, low priority for normal calls):**
-```json
-{
-  "name": "Infura",
-  "url": "https://mainnet.infura.io/v3/YOUR_KEY",
-  "callsPerSecond": 10,
-  "priority": 0,
-  "isActive": true,
-  "supportsLargeBlockScans": true
-}
-```
+- Configure at least two independent scan-capable providers per required chain.
+- Prefer separate vendor projects or vendors; two URLs sharing one quota do not
+  protect against project-level credit exhaustion.
+- Start scan-capable endpoints around 1 call/second when the true allowance is
+  unknown, then tune from observed provider status and vendor limits.
+- Keep range-limited endpoints scan-enabled if they reliably serve historical
+  logs; the inventory scanner adapts the range.
+- A second provider helps only after it is active for the chain and marked
+  scan-capable.
 
-**Alchemy (fast for normal calls, skip for scans):**
-```json
-{
-  "name": "Alchemy",
-  "url": "https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY",
-  "callsPerSecond": 25,
-  "priority": 10,
-  "isActive": true,
-  "supportsLargeBlockScans": false  // <-- Free tier: 10 block limit
-}
-```
-
-**Result:**
-- Normal calls (99% of requests) → Load balanced, Alchemy preferred (higher priority)
-- Block scans (1% of requests) → Only Infura used because it is the only provider marked scan-capable
-
-To provide scan failover, configure at least two independent providers with
-`supportsLargeBlockScans=true` and conservative `callsPerSecond` values.
-
-### Single Provider Setup
-
-If you only have one provider, the system degrades gracefully:
-
-**Infura only:**
-- ✅ Normal calls work
-- ✅ Block scans work
-- ✅ Uniswap discovery works
-
-**Alchemy free tier only:**
-- ✅ Normal calls work
-- ❌ Block scans fail (10 block limit)
-- ❌ Uniswap discovery skipped (warns in logs)
-
-## Files Modified
-
-1. **`src/utils/rpc-manager.ts`**
-   - Added `supportsLargeBlockScans` to `RPCProviderConfig`
-   - Added rate-limited, failover-aware `sendScan()` routing
-
-2. **`src/utils/rpc-proxy-provider.ts`**
-   - Added a stable scan-only provider view backed by the RPC manager
-
-3. **`src/models/rpc-provider.ts`**
-   - Updated database row type to include `supports_large_block_scans`
-   - Updated all SQL queries to include the column
-   - Updated `createRPCProvider()` to handle the flag (defaults to `true`)
-   - Updated `updateRPCProvider()` to allow updating the flag
-
-4. **`src/adapters/uniswap-v4.ts`**
-   - Updated `discover()` to use scan-capable provider for event queries
-   - Added fallback to regular provider for single-provider setups
-   - Added warning logs when no scan-capable providers available
-
-5. **`frontend/admin.html`**
-   - Added "Supports Large Block Scans" checkbox to add provider form
-   - Added "Capabilities" column to provider table showing scan support status
-   - Updated JavaScript to include `supportsLargeBlockScans` in form submission
-
-6. **`migrations/1733000030000_add-rpc-supports-large-block-scans.js`**
-   - New migration adding `supports_large_block_scans` column
-   - Defaults to `true` for backwards compatibility
-
-## Benefits
-
-### Performance
-- **Fast providers for common calls**: Alchemy handles 99% of requests (higher priority)
-- **Capable providers for heavy lifting**: Infura handles 1% of scans that need large block ranges
-
-### Cost Optimization
-- Use free tiers for different purposes
-- Alchemy free: Fast, high rate limit, but restricted scans
-- Infura free: Generous block scan limits
-
-### Reliability
-- System gracefully skips protocols that require scans if no capable providers available
-- Clear warnings in logs guide configuration
-
-### Flexibility
-- Can mix and match providers based on their strengths
-- New providers can specify capabilities via single boolean flag
-
-## Future Extensions
-
-This pattern can be extended for other provider-specific capabilities:
-
-```typescript
-interface RPCProviderConfig {
-  // Existing
-  supportsLargeBlockScans?: boolean;
-
-  // Potential future additions
-  supportsTraceApi?: boolean;           // trace_* methods
-  supportsDebugApi?: boolean;           // debug_* methods
-  supportsArchiveData?: boolean;        // Historical state queries
-  supportsWebSocket?: boolean;          // WebSocket subscriptions
-  supportsEIP1559?: boolean;            // Type 2 transactions
-}
-```
-
-Then add routing methods:
-
-```typescript
-getTraceCapableProvider(): ethers.JsonRpcProvider | null;
-getArchiveCapableProvider(): ethers.JsonRpcProvider | null;
-getWebSocketProvider(): ethers.WebSocketProvider | null;
-```
-
-## Testing
-
-To verify the routing is working:
-
-1. **Add Alchemy with `supportsLargeBlockScans=false`:**
-   ```bash
-   # Via admin UI or database
-   UPDATE rpc_provider SET supports_large_block_scans = false WHERE name = 'Alchemy';
-   ```
-
-2. **Add Infura with `supportsLargeBlockScans=true`:**
-   ```bash
-   # Already defaults to true
-   ```
-
-3. **Trigger discovery:**
-   ```bash
-   # Watch logs
-   docker compose logs app --follow
-   ```
-
-4. **Expected behavior:**
-   - Normal balance checks → Load balanced between both providers
-   - Uniswap discovery → Only uses Infura
-   - No "10 block range" errors
+No retry strategy can overcome an exhausted daily/project quota when every
+eligible provider shares that quota. Add an independent backup or increase the
+quota in that case.
 
 ## Troubleshooting
 
-### "No scan-capable RPC provider available"
+### `RPC block-range limit detected`
 
-**Cause:** All providers have `supportsLargeBlockScans=false` or are unhealthy
+This is expected adaptation, not a terminal failure. The warning should appear
+once for that inventory scan and must not include an RPC URL or credentials.
 
-**Solution:**
-1. Check provider status in admin UI
-2. Update at least one provider to have `supportsLargeBlockScans=true`
-3. Or add a new provider that supports large scans (Infura, QuickNode, etc.)
+### `Too Many Requests`, `-32005`, or all providers rate limited
 
-### Uniswap positions not discovered
+1. Confirm the deployed scan path uses the managed scan-only provider.
+2. Lower `callsPerSecond` for the throttled endpoint.
+3. Check its daily/project credit usage.
+4. Confirm at least one independent backup has an Arbitrum URL (when relevant),
+   is active, and has Historical Block Scans enabled.
+5. Inspect provider health in the admin UI, then rescan after configuration is
+   reloaded.
 
-**Cause:** No scan-capable providers are configured, or all configured scan
-providers are temporarily unhealthy or quota-limited.
+### `BAD_DATA: missing response for request`
 
-**Solution:**
-- Uniswap requires historical event scanning
-- Must have at least one provider with `supportsLargeBlockScans=true`
-- Other protocols (Aave, Curve, etc.) don't require scans and will work fine
+If the error contains a mixed response with `Too Many Requests`, first confirm
+the deployment includes disabled batching and static network configuration.
+The recursive retry classifier still handles this legacy/provider error shape.
 
-### All requests going to one provider
+### `No scan-capable RPC provider available`
 
-**Check:**
-1. Is only one provider active?
-2. Are other providers unhealthy?
-3. For scans: Is only one provider scan-capable?
+At least one active chain provider must have Historical Block Scans enabled. A
+normal-only provider cannot be used as a silent fallback for historical scans.
 
-Scan operations only use scan-capable providers. Configure at least two such
-providers if discovery must continue through a single-provider outage or throttle.
+### Inventory history mismatch
+
+An error such as `found 1 of 2 NFTs reported by balanceOf` means the scanner
+reached its configured deployment block without finding every currently owned
+NFT. Check the protocol's `deployBlock`, provider historical-log completeness,
+and any swallowed/non-retryable `ownerOf` errors before changing the invariant.
+
+## Regression tests
+
+Relevant deterministic tests are:
+
+- `tests/utils/uniswap-v4-inventory.test.ts`—range adaptation, newest-first
+  stopping, ownership, retries, production nested error payloads, and failure
+  caching;
+- `tests/utils/rpc-manager.test.ts`—scan capability filtering, throttled-provider
+  failover, batching options, static networks, quota accounting, and low rates;
+- `tests/utils/rpc-proxy-provider.test.ts`—stable scan-only provider routing;
+- `tests/utils/ethereum.test.ts`—chain initialization and capability selection.
+
+Run `npm run typecheck`, `npm run lint`, and `npm test` after routing changes.

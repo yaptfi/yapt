@@ -66,6 +66,9 @@ describe('RPCManager scan routing', () => {
     expect(primarySend).toHaveBeenCalledTimes(1);
     expect(normalOnlySend).not.toHaveBeenCalled();
     expect(backupSend).toHaveBeenCalledTimes(1);
+    expect(console.log).toHaveBeenCalledWith(
+      '[RPCManager] Scan failover succeeded with provider "Backup"'
+    );
     expect(manager.getStatus().map(({ name, dailyCallCount }) => ({ name, dailyCallCount })))
       .toEqual([
         { name: 'Primary', dailyCallCount: 1 },
@@ -116,6 +119,25 @@ describe('RPCManager scan routing', () => {
       'No scan-capable RPC providers configured'
     );
     expect(normalOnlySend).not.toHaveBeenCalled();
+  });
+
+  it('reports when only one scan provider is configured and does not claim to retry', async () => {
+    const onlySend = jest.fn().mockRejectedValue(new Error('service temporarily unavailable'));
+    mockSendByUrl.set('https://only.example', onlySend);
+    const manager = new RPCManager([
+      createConfig('Only', 'https://only.example', 10, true),
+    ]);
+
+    expect(manager.getScanCapableProviderCount()).toBe(1);
+    expect(console.log).toHaveBeenCalledWith(
+      '[RPCManager] Initialized with 1 provider(s), 1 scan-capable; scan failover unavailable'
+    );
+    await expect(manager.sendScan('eth_getLogs', [])).rejects.toThrow(
+      'service temporarily unavailable'
+    );
+    expect(console.log).not.toHaveBeenCalledWith(
+      expect.stringContaining('Retrying with next scan-capable provider')
+    );
   });
 
   it('supports configured rates below half a call per second', () => {

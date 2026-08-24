@@ -150,7 +150,14 @@ export class RPCManager {
       throw new Error('No active RPC providers configured');
     }
 
-    console.log(`[RPCManager] Initialized with ${this.providers.length} provider(s)`);
+    const scanCapableProviderCount = this.getScanCapableProviderCount();
+    const failoverStatus = scanCapableProviderCount < 2
+      ? '; scan failover unavailable'
+      : '';
+    console.log(
+      `[RPCManager] Initialized with ${this.providers.length} provider(s), ` +
+      `${scanCapableProviderCount} scan-capable${failoverStatus}`
+    );
   }
 
   /**
@@ -347,6 +354,11 @@ export class RPCManager {
         // Execute the RPC call
         const result = await providerState.provider.send(method, params);
         this.markProviderSuccess(providerState);
+        if (scanOnly && attempt > 0) {
+          console.log(
+            `[RPCManager] Scan failover succeeded with provider "${providerState.config.name}"`
+          );
+        }
         return result;
       } catch (error) {
         lastError = error as Error;
@@ -358,10 +370,12 @@ export class RPCManager {
         }
 
         // Continue to next provider
-        console.log(
-          `[RPCManager] Retrying with next ${scanOnly ? 'scan-capable ' : ''}provider ` +
-          `(attempt ${attempt + 1}/${eligibleProviderCount})`
-        );
+        if (attempt + 1 < eligibleProviderCount) {
+          console.log(
+            `[RPCManager] Retrying with next ${scanOnly ? 'scan-capable ' : ''}provider ` +
+            `(attempt ${attempt + 1}/${eligibleProviderCount})`
+          );
+        }
       } finally {
         // Provider quotas count attempted requests, including throttled or failed calls.
         providerState.dailyCallCount++;
@@ -501,7 +515,12 @@ export class RPCManager {
 
   /** Returns whether at least one active provider is configured for block scans. */
   hasScanCapableProviders(): boolean {
-    return this.providers.some(state => state.config.supportsLargeBlockScans === true);
+    return this.getScanCapableProviderCount() > 0;
+  }
+
+  /** Returns the number of active providers eligible for historical scans. */
+  getScanCapableProviderCount(): number {
+    return this.providers.filter(state => state.config.supportsLargeBlockScans === true).length;
   }
 
   /**

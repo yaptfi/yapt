@@ -96,7 +96,11 @@ Positions have three semantic categories, derived at the service layer from the 
 - RPC rate limiting is primarily handled by `RPCManager` (not fixed sleep loops).
 - `rpcThrottle()` is currently a compatibility no-op; keep existing callsites consistent with nearby code patterns.
 - Normal calls (`balanceOf`, reads, etc.) should use `getProvider()`/`getContract()` (load-balanced path).
-- Historical scans (`queryFilter`/`getLogs`) should use a scan-capable provider via `getScanCapableProvider()`.
+- Historical scans (`queryFilter`/`getLogs`) should use `getScanCapableProviderForChain()`; do not obtain a direct underlying provider or bypass `RPCManager`.
+- Managed scan providers are rate-limited and fail over only across providers with `supportsLargeBlockScans=true`. Keep the returned scan-provider object stable so inventory caches can share work.
+- `supportsLargeBlockScans=true` means the endpoint can serve historical `eth_getLogs`; it does not mean unlimited ranges. Shared scanners must adapt provider-reported range limits.
+- Managed JSON-RPC providers deliberately disable ethers batching and pin their configured network. This avoids id-less throttle responses becoming mixed-batch `BAD_DATA` errors and avoids redundant `eth_chainId` calls.
+- Configure at least two independent scan-capable providers for resilient discovery. Multiple URLs sharing one vendor project/quota are not true quota failover.
 - If no scan-capable provider is available, skip that protocol gracefully and log a warning.
 - `supports_large_block_scans` comes from migration `1733000030000_add-rpc-supports-large-block-scans.js`.
 
@@ -116,7 +120,8 @@ Positions have three semantic categories, derived at the service layer from the 
 
 Protocol-specific gotchas worth preserving:
 - Yearn-style ERC4626 vaults can have different share vs asset decimals (`shareDecimals` vs `decimals`).
-- Uniswap v4 discovery must scan NFT transfer events and verify current `ownerOf`.
+- Uniswap v4 discovery uses the shared inventory scanner: read `balanceOf` at a fixed latest block, scan incoming NFT transfers newest-to-oldest in adaptive chunks, verify `ownerOf` at that same block, and stop when the balance is satisfied.
+- Preserve recursive ethers error parsing for nested `error`, `info`, and `value[]` payloads; Infura throttles have appeared as `BAD_DATA` with `-32005`/`Too Many Requests` inside `value[]`.
 - For Uniswap v4 pool reads, use the Position Manager as owner when querying position state.
 - Decode packed int24 ticks with proper two's-complement conversion.
 
