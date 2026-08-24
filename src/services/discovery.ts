@@ -9,10 +9,23 @@ import { DISCOVERY_SLEEP_MS } from '../constants';
 import { getPositionCategory } from '../utils/position-category';
 import { refreshFutureIncomeProjection } from './update';
 
-export type DiscoveryProgressCallback = (event: {
-  type: 'start' | 'protocol_start' | 'position_found' | 'protocol_complete' | 'complete' | 'error';
-  data: any;
-}) => void;
+export type DiscoveryProgressEvent =
+  | { type: 'status'; data: { message: string } }
+  | { type: 'start'; data: { totalProtocols: number } }
+  | { type: 'protocol_start'; data: { protocol: string; index: number; total: number } }
+  | { type: 'position_found'; data: { protocol: string; displayName: string; baseAsset: string; valueUsd: number } }
+  | { type: 'protocol_error'; data: { protocol: string; message: string } }
+  | { type: 'protocol_complete'; data: { protocol: string; positionsFound: number } }
+  | {
+      type: 'complete';
+      data: {
+        totalPositions: number;
+        failedProtocols: Array<{ protocol: string; message: string }>;
+      };
+    }
+  | { type: 'error'; data: { message: string } };
+
+export type DiscoveryProgressCallback = (event: DiscoveryProgressEvent) => void;
 
 type DiscoveryChain = 'ethereum' | 'arbitrum' | 'other';
 
@@ -46,6 +59,7 @@ interface AdapterTaskResult {
   discoveredPositions: Position[];
   positionsFound: number;
   durationMs: number;
+  errorMessage?: string;
 }
 
 interface ChainCircuitBreakerState {
@@ -57,6 +71,8 @@ interface ChainCircuitBreakerState {
 interface InFlightWalletDiscovery {
   promise: Promise<Position[]>;
   progressCallbacks: Set<DiscoveryProgressCallback>;
+  startedAtMs: number;
+  latestProgressEvent?: DiscoveryProgressEvent;
 }
 
 const chainCircuitBreakers: Record<DiscoveryChain, ChainCircuitBreakerState> = {
@@ -327,7 +343,8 @@ function createAdapterTaskResult(
   context: AdapterTaskContext,
   startedAtMs: number,
   discoveredPositions: Position[],
-  positionsFound: number
+  positionsFound: number,
+  errorMessage?: string
 ): AdapterTaskResult {
   return {
     index: context.index,
@@ -337,6 +354,7 @@ function createAdapterTaskResult(
     discoveredPositions,
     positionsFound,
     durationMs: Date.now() - startedAtMs,
+    errorMessage,
   };
 }
 
@@ -350,6 +368,7 @@ async function discoverSingleAdapter(
   const startedAtMs = Date.now();
   const discoveredPositions: Position[] = [];
   let positionsFoundForProtocol = 0;
+  let errorMessage: string | undefined;
   const { adapter } = context;
 
   if (onProgress) {
@@ -367,11 +386,19 @@ async function discoverSingleAdapter(
 
   if (isChainCircuitOpen(context.chain, config)) {
     const remainingMs = getCircuitOpenRemainingMs(context.chain);
+    errorMessage = `${context.chain} RPC circuit breaker is open (${remainingMs}ms remaining)`;
     console.warn(
       `[discovery] Skipping ${adapter.protocolName} on ${context.chain} ` +
       `because circuit breaker is open (${remainingMs}ms remaining)`
     );
     if (onProgress) {
+      onProgress({
+        type: 'protocol_error',
+        data: {
+          protocol: adapter.protocolName,
+          message: errorMessage,
+        },
+      });
       onProgress({
         type: 'protocol_complete',
         data: {
@@ -380,7 +407,13 @@ async function discoverSingleAdapter(
         },
       });
     }
-    return createAdapterTaskResult(context, startedAtMs, discoveredPositions, positionsFoundForProtocol);
+    return createAdapterTaskResult(
+      context,
+      startedAtMs,
+      discoveredPositions,
+      positionsFoundForProtocol,
+      errorMessage
+    );
   }
 
   try {
@@ -484,7 +517,14 @@ async function discoverSingleAdapter(
     }
     recordChainSuccess(context.chain, config);
   } catch (error) {
+    errorMessage = getErrorMessage(error);
     console.error(`Discovery failed for ${adapter.protocolName}:`, error);
+    if (onProgress) {
+      onProgress({
+        type: 'protocol_error',
+        data: { protocol: adapter.protocolName, message: errorMessage },
+      });
+    }
     if (isRetryableError(error)) {
       recordChainFailure(context.chain, error, context, config);
     }
@@ -501,7 +541,13 @@ async function discoverSingleAdapter(
     }
   }
 
-  const result = createAdapterTaskResult(context, startedAtMs, discoveredPositions, positionsFoundForProtocol);
+  const result = createAdapterTaskResult(
+    context,
+    startedAtMs,
+    discoveredPositions,
+    positionsFoundForProtocol,
+    errorMessage
+  );
 
   if (config.logMetrics) {
     console.log(
@@ -668,7 +714,15 @@ async function discoverPositionsCore(
   if (onProgress) {
     onProgress({
       type: 'complete',
-      data: { totalPositions: discoveredPositions.length },
+      data: {
+        totalPositions: discoveredPositions.length,
+        failedProtocols: taskResults
+          .filter((result) => result.errorMessage !== undefined)
+          .map((result) => ({
+            protocol: result.protocolName,
+            message: result.errorMessage!,
+          })),
+      },
     });
   } else {
     console.log(`Discovery complete: found ${discoveredPositions.length} positions`);
@@ -686,7 +740,27 @@ async function discoverPositionsDeduped(
   if (existing) {
     if (onProgress) {
       existing.progressCallbacks.add(onProgress);
+      const elapsedSeconds = Math.max(1, Math.floor((Date.now() - existing.startedAtMs) / 1000));
+      const latestEvent = existing.latestProgressEvent;
+      const currentProtocol = latestEvent?.type === 'protocol_start'
+        ? ` Currently checking ${latestEvent.data.protocol} (${latestEvent.data.index}/${latestEvent.data.total}).`
+        : '';
+
+      try {
+        onProgress({
+          type: 'status',
+          data: {
+            message: `A discovery is already running for this wallet; joined it after ${elapsedSeconds}s.${currentProtocol}`,
+          },
+        });
+      } catch (error) {
+        console.error('[discovery] Progress callback failed while joining in-flight discovery:', error);
+      }
     }
+    console.info(
+      `[discovery] Joined in-flight wallet discovery walletId=${walletId} ` +
+      `elapsedMs=${Date.now() - existing.startedAtMs}`
+    );
     return existing.promise.finally(() => {
       if (onProgress) {
         existing.progressCallbacks.delete(onProgress);
@@ -699,7 +773,14 @@ async function discoverPositionsDeduped(
     progressCallbacks.add(onProgress);
   }
 
+  const discoveryState: InFlightWalletDiscovery = {
+    promise: Promise.resolve([]),
+    progressCallbacks,
+    startedAtMs: Date.now(),
+  };
+
   const fanoutProgress: DiscoveryProgressCallback = (event) => {
+    discoveryState.latestProgressEvent = event;
     for (const callback of progressCallbacks) {
       try {
         callback(event);
@@ -714,10 +795,8 @@ async function discoverPositionsDeduped(
       inFlightWalletDiscoveries.delete(walletId);
     });
 
-  inFlightWalletDiscoveries.set(walletId, {
-    promise: discoveryPromise,
-    progressCallbacks,
-  });
+  discoveryState.promise = discoveryPromise;
+  inFlightWalletDiscoveries.set(walletId, discoveryState);
 
   return discoveryPromise.finally(() => {
     if (onProgress) {

@@ -20,9 +20,15 @@
 
 // Helper function to consume SSE stream and handle discovery events
 async function consumeDiscoveryStream(response, statusText, positionsContainer) {
+  if (!response.body) {
+    throw new Error('The server returned an empty discovery response');
+  }
+
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let completed = false;
+  let streamError = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -34,10 +40,24 @@ async function consumeDiscoveryStream(response, statusText, positionsContainer) 
 
     for (const line of lines) {
       if (line.startsWith('data: ')) {
-        const event = JSON.parse(line.slice(6));
+        let event;
+        try {
+          event = JSON.parse(line.slice(6));
+        } catch (_error) {
+          throw new Error('The server sent an invalid discovery progress update');
+        }
         handleDiscoveryEvent(event, statusText, positionsContainer);
+        if (event.type === 'complete') completed = true;
+        if (event.type === 'error') streamError = event.data?.message || 'Discovery failed';
       }
     }
+  }
+
+  if (streamError) {
+    throw new Error(streamError);
+  }
+  if (!completed) {
+    throw new Error('The discovery connection closed before the scan completed');
   }
 }
 
@@ -204,8 +224,14 @@ async function addWallet(event) {
       throw new Error(data.error || 'Failed to add wallet');
     }
 
-    // Handle SSE stream
-    await consumeDiscoveryStream(response, statusText, positionsContainer);
+    // Existing shared wallets return JSON; newly created wallets stream SSE.
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/event-stream')) {
+      await consumeDiscoveryStream(response, statusText, positionsContainer);
+    } else {
+      const data = await response.json();
+      statusText.textContent = data.message || 'Wallet added';
+    }
 
     // Discovery complete - switch to dashboard
     input.value = '';
@@ -235,6 +261,10 @@ async function addWallet(event) {
 
 function handleDiscoveryEvent(event, statusText, positionsContainer) {
   switch (event.type) {
+    case 'status':
+      statusText.textContent = event.data.message;
+      break;
+
     case 'start':
       statusText.textContent = `Scanning ${event.data.totalProtocols} protocols...`;
       break;
@@ -260,12 +290,42 @@ function handleDiscoveryEvent(event, statusText, positionsContainer) {
       positionsContainer.appendChild(posItem);
       break;
 
+    case 'protocol_error': {
+      const errorItem = document.createElement('div');
+      errorItem.className = 'position-discovery-item';
+      errorItem.style.borderColor = 'var(--danger)';
+
+      const errorIcon = document.createElement('div');
+      errorIcon.className = 'check-icon';
+      errorIcon.style.background = 'var(--danger)';
+      errorIcon.textContent = '!';
+
+      const details = document.createElement('div');
+      details.className = 'position-discovery-details';
+      const name = document.createElement('div');
+      name.className = 'position-discovery-name';
+      name.textContent = `${event.data.protocol} failed`;
+      const message = document.createElement('div');
+      message.className = 'position-discovery-meta';
+      message.textContent = event.data.message;
+      details.append(name, message);
+
+      errorItem.append(errorIcon, details);
+      positionsContainer.appendChild(errorItem);
+      statusText.textContent = `${event.data.protocol} failed; continuing with other protocols…`;
+      break;
+    }
+
     case 'protocol_complete':
       // Just continue to next protocol
       break;
 
     case 'complete':
-      statusText.textContent = `Discovery complete! Found ${event.data.totalPositions} position${event.data.totalPositions !== 1 ? 's' : ''}`;
+      const failedCount = event.data.failedProtocols?.length || 0;
+      statusText.textContent = failedCount > 0
+        ? `Discovery finished with ${failedCount} protocol failure${failedCount !== 1 ? 's' : ''}; found ${event.data.totalPositions} position${event.data.totalPositions !== 1 ? 's' : ''}`
+        : `Discovery complete! Found ${event.data.totalPositions} position${event.data.totalPositions !== 1 ? 's' : ''}`;
+      if (failedCount > 0) statusText.style.color = 'var(--danger)';
       break;
 
     case 'error':
@@ -376,20 +436,44 @@ async function scanWallet(walletId, walletAddress, btnEl) {
   const statusText = document.getElementById('rescanStatus');
   const positionsContainer = document.getElementById('rescanPositions');
 
+  if (btnEl?.dataset.scanning === 'true') return;
+
+  const originalButtonText = btnEl?.textContent || 'Re-scan';
+  if (btnEl) {
+    btnEl.dataset.scanning = 'true';
+    btnEl.disabled = true;
+    btnEl.textContent = 'Scanning…';
+  }
+
   try {
     // Show modal with progress UI
     modal.style.display = 'flex';
     positionsContainer.innerHTML = '';
-    statusText.textContent = 'Starting discovery...';
+    statusText.style.removeProperty('color');
+    statusText.textContent = 'Contacting the server…';
 
-    const response = await fetch(`${API_BASE}/wallets/${walletId}/scan`, {
-      method: 'POST',
-      credentials: 'include',
-    });
+    const controller = new AbortController();
+    const connectionTimeout = setTimeout(() => controller.abort(), 15_000);
+
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/wallets/${walletId}/scan`, {
+        method: 'POST',
+        credentials: 'include',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(connectionTimeout);
+    }
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || 'Failed to start scan');
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('text/event-stream')) {
+      throw new Error('The server did not start a discovery progress stream');
     }
 
     // Handle SSE stream
@@ -403,8 +487,18 @@ async function scanWallet(walletId, walletAddress, btnEl) {
     }, 1500);
 
   } catch (error) {
-    alert(`Failed to scan ${walletAddress}: ${error.message}`);
-    closeRescanModal();
+    const message = error.name === 'AbortError'
+      ? 'The server did not acknowledge the scan within 15 seconds'
+      : (error.message || 'Unknown error');
+    statusText.style.color = 'var(--danger)';
+    statusText.textContent = `Scan failed for ${walletAddress}: ${message}`;
+    console.error(`Failed to scan ${walletAddress}:`, error);
+  } finally {
+    if (btnEl) {
+      delete btnEl.dataset.scanning;
+      btnEl.disabled = false;
+      btnEl.textContent = originalButtonText;
+    }
   }
 }
 

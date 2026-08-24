@@ -100,6 +100,12 @@ For a historical-log provider:
 - set `callsPerSecond` conservatively and below the vendor quota;
 - set `callsPerDay` when the plan has a known daily allowance.
 
+The **Use for Historical Scans** checkbox is an opt-in routing control, not a
+provider capability test. Enabling it immediately makes the endpoint eligible
+for live `eth_getLogs` requests after the RPC managers reload. New providers
+default to unchecked in the admin UI; enable it only after confirming the plan
+supports historical logs and setting conservative rate limits.
+
 Creating or editing providers through the admin API reloads the in-process
 provider managers automatically.
 
@@ -157,6 +163,15 @@ once for that inventory scan and must not include an RPC URL or credentials.
    is active, and has Historical Block Scans enabled.
 5. Inspect provider health in the admin UI, then rescan after configuration is
    reloaded.
+
+### Re-scan appears stuck at `Starting discovery`
+
+The scan endpoint sends an immediate acceptance event and a keep-alive every 15
+seconds. If the same wallet is already being scanned, the UI reports that it
+joined the in-flight scan and shows the current protocol. Server logs record the
+request, stream acceptance, completion or failure, browser disconnects, and the
+elapsed time. Protocol-level failures remain fail-soft, but are listed in the
+re-scan modal and summarized when discovery completes.
 
 ### `BAD_DATA: missing response for request`
 

@@ -192,8 +192,7 @@ export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
 
     const scanProvider = this.getScanProvider(config.chainId);
     if (!scanProvider) {
-      console.warn(`[${this.protocolName}] No scan-capable RPC provider available - skipping discovery`);
-      return [];
+      throw new Error(`[${this.protocolName}] No scan-capable RPC provider available`);
     }
 
     const fromBlock = config.deployBlock ?? 21688823;
@@ -290,7 +289,8 @@ export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
         });
       }
     } catch (error) {
-      console.error(`Error discovering ${this.protocolName} positions for ${walletAddress}:`, error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${this.protocolName} inventory scan failed: ${message}`);
     }
 
     return positions;

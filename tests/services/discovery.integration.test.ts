@@ -309,6 +309,45 @@ describe('discovery service integration', () => {
     expect(mockCreateSnapshot).toHaveBeenCalledTimes(1);
   });
 
+  it('immediately tells a late progress subscriber that it joined an in-flight discovery', async () => {
+    const deferred = createDeferred<PartialDiscoveredPosition[]>();
+    const adapter = createStubAdapter({
+      protocolKey: 'slow-protocol',
+      protocolName: 'Slow Protocol',
+      positions: [],
+      valuesByPositionKey: {},
+    });
+    adapter.discover.mockReturnValue(deferred.promise);
+    mockGetAllAdapters.mockReturnValue([adapter]);
+
+    const firstProgress: Array<{ type: string; data: Record<string, unknown> }> = [];
+    const joinedProgress: Array<{ type: string; data: Record<string, unknown> }> = [];
+    const firstDiscovery = discoveryModule.discoverPositionsWithProgress(
+      walletId,
+      walletAddress,
+      (event) => firstProgress.push(event)
+    );
+    await flushMicrotasks();
+
+    const joinedDiscovery = discoveryModule.discoverPositionsWithProgress(
+      walletId,
+      walletAddress,
+      (event) => joinedProgress.push(event)
+    );
+
+    expect(adapter.discover).toHaveBeenCalledTimes(1);
+    expect(firstProgress.some((event) => event.type === 'protocol_start')).toBe(true);
+    expect(joinedProgress[0]).toMatchObject({
+      type: 'status',
+      data: { message: expect.stringContaining('already running') },
+    });
+    expect(joinedProgress[0]?.data.message).toContain('Currently checking Slow Protocol (1/1)');
+
+    deferred.resolve([]);
+    await Promise.all([firstDiscovery, joinedDiscovery]);
+    expect(joinedProgress.some((event) => event.type === 'complete')).toBe(true);
+  });
+
   it('emits progress events and keeps assertions order-agnostic for future parallel discovery refactors', async () => {
     const adapterA = createStubAdapter({
       protocolKey: 'protocol-a',
@@ -351,6 +390,47 @@ describe('discovery service integration', () => {
     const completeEvent = progressEvents.find((event) => event.type === 'complete');
     expect(completeEvent).toBeDefined();
     expect(completeEvent?.data.totalPositions).toBe(2);
+    expect(completeEvent?.data.failedProtocols).toEqual([]);
+  });
+
+  it('reports adapter failures in progress and the completion summary while continuing discovery', async () => {
+    const failedAdapter = createStubAdapter({
+      protocolKey: 'failed-protocol',
+      protocolName: 'Failed Protocol',
+      positions: [],
+      valuesByPositionKey: {},
+    });
+    failedAdapter.discover.mockRejectedValue(new Error('historical logs unavailable'));
+    const healthyAdapter = createStubAdapter({
+      protocolKey: 'healthy-protocol',
+      protocolName: 'Healthy Protocol',
+      positions: [],
+      valuesByPositionKey: {},
+    });
+    mockGetAllAdapters.mockReturnValue([failedAdapter, healthyAdapter]);
+
+    const progressEvents: Array<{ type: string; data: Record<string, unknown> }> = [];
+    const discovered = await discoveryModule.discoverPositionsWithProgress(
+      walletId,
+      walletAddress,
+      (event) => progressEvents.push(event)
+    );
+
+    expect(discovered).toEqual([]);
+    expect(healthyAdapter.discover).toHaveBeenCalledTimes(1);
+    expect(progressEvents).toContainEqual({
+      type: 'protocol_error',
+      data: { protocol: 'Failed Protocol', message: 'historical logs unavailable' },
+    });
+    expect(progressEvents.at(-1)).toEqual({
+      type: 'complete',
+      data: {
+        totalPositions: 0,
+        failedProtocols: [
+          { protocol: 'Failed Protocol', message: 'historical logs unavailable' },
+        ],
+      },
+    });
   });
 
   it('parallel mode allows ethereum discovery to finish while arbitrum adapter is still pending', async () => {

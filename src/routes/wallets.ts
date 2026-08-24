@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getOrCreateWalletByAddress, getWalletById, getWalletByAddress, setWalletEnsName } from '../models/wallet';
 import { getUserWallets, addWalletToUser, removeWalletFromUser, isWalletTrackedByUser } from '../models/user-wallet';
-import { discoverPositionsWithProgress } from '../services/discovery';
+import { discoverPositionsWithProgress, DiscoveryProgressEvent } from '../services/discovery';
 import { isValidAddress, toChecksumAddress, isENSName, resolveENS, lookupEnsForAddress } from '../utils/ethereum';
 import { requireAuth } from '../middleware/auth';
 
@@ -9,47 +9,96 @@ interface AddWalletBody {
   address: string;
 }
 
-export type DiscoveryProgressEvent =
-  | { type: 'start'; data: { totalProtocols: number } }
-  | { type: 'protocol_start'; data: { protocol: string; index: number; total: number } }
-  | { type: 'position_found'; data: { protocol: string; displayName: string; baseAsset: string; valueUsd: number } }
-  | { type: 'protocol_complete'; data: { protocol: string; positionsFound: number } }
-  | { type: 'complete'; data: { totalPositions: number } }
-  | { type: 'error'; data: { message: string } };
+type DiscoveryTrigger = 'new-wallet' | 'rescan';
 
 /**
  * Helper function to stream discovery progress via SSE
  */
 async function streamDiscoveryProgress(
+  server: FastifyInstance,
   walletId: string,
   walletAddress: string,
   request: FastifyRequest,
-  reply: FastifyReply
-) {
+  reply: FastifyReply,
+  trigger: DiscoveryTrigger
+): Promise<void> {
+  const startedAtMs = Date.now();
+  let finished = false;
+
+  server.log.info(
+    { requestId: request.id, userId: request.user?.id, walletId, trigger },
+    'Wallet discovery stream accepted'
+  );
+
   // Set up SSE headers
   const origin = request.headers.origin || '*';
+  reply.hijack();
   reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'true',
   });
 
   const sendEvent = (event: DiscoveryProgressEvent) => {
-    reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
   };
+
+  const handleDisconnect = () => {
+    if (!finished) {
+      server.log.warn(
+        { requestId: request.id, userId: request.user?.id, walletId, trigger },
+        'Wallet discovery client disconnected; discovery will continue in the background'
+      );
+    }
+  };
+  reply.raw.once('close', handleDisconnect);
+
+  // Send a body immediately so the browser and reverse proxy cannot leave the
+  // request looking idle while discovery attaches to an existing scan.
+  sendEvent({ type: 'status', data: { message: 'Scan accepted. Loading protocols…' } });
+
+  const heartbeat = setInterval(() => {
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      reply.raw.write(': keep-alive\n\n');
+    }
+  }, 15_000);
+  heartbeat.unref();
 
   try {
     // Run discovery with progress streaming
-    await discoverPositionsWithProgress(walletId, walletAddress, sendEvent);
-    reply.raw.end();
+    const positions = await discoverPositionsWithProgress(walletId, walletAddress, sendEvent);
+    server.log.info(
+      {
+        requestId: request.id,
+        userId: request.user?.id,
+        walletId,
+        trigger,
+        positionsFound: positions.length,
+        durationMs: Date.now() - startedAtMs,
+      },
+      'Wallet discovery completed'
+    );
   } catch (error) {
+    server.log.error(
+      { err: error, requestId: request.id, userId: request.user?.id, walletId, trigger },
+      'Wallet discovery failed'
+    );
     sendEvent({
       type: 'error',
       data: { message: error instanceof Error ? error.message : 'Discovery failed' },
     });
-    reply.raw.end();
+  } finally {
+    finished = true;
+    clearInterval(heartbeat);
+    reply.raw.off('close', handleDisconnect);
+    if (!reply.raw.destroyed && !reply.raw.writableEnded) {
+      reply.raw.end();
+    }
   }
 }
 
@@ -173,22 +222,38 @@ export default async function walletRoutes(server: FastifyInstance) {
 
       const { id } = request.params;
 
+      server.log.info(
+        { requestId: request.id, userId: request.user.id, walletId: id },
+        'Wallet rescan requested'
+      );
+
       try {
         // Check if user tracks this wallet
         const isTracking = await isWalletTrackedByUser(request.user.id, id);
         if (!isTracking) {
+          server.log.warn(
+            { requestId: request.id, userId: request.user.id, walletId: id },
+            'Wallet rescan rejected because the wallet is not tracked by this user'
+          );
           return reply.code(404).send({ error: 'Wallet not found' });
         }
 
         const wallet = await getWalletById(id);
         if (!wallet) {
+          server.log.warn(
+            { requestId: request.id, userId: request.user.id, walletId: id },
+            'Wallet rescan rejected because the wallet record does not exist'
+          );
           return reply.code(404).send({ error: 'Wallet not found' });
         }
 
         // Stream discovery progress via SSE
-        await streamDiscoveryProgress(wallet.id, wallet.address, request, reply);
+        await streamDiscoveryProgress(server, wallet.id, wallet.address, request, reply, 'rescan');
       } catch (error) {
-        server.log.error(error);
+        server.log.error(
+          { err: error, requestId: request.id, userId: request.user.id, walletId: id },
+          'Failed to prepare wallet rescan'
+        );
         return reply.code(500).send({ error: 'Failed to trigger scan' });
       }
     }
@@ -284,7 +349,7 @@ export default async function walletRoutes(server: FastifyInstance) {
         }
 
         // Stream discovery progress via SSE (only for new wallets)
-        await streamDiscoveryProgress(wallet.id, checksumAddress, request, reply);
+        await streamDiscoveryProgress(server, wallet.id, checksumAddress, request, reply, 'new-wallet');
       } catch (error) {
         server.log.error(error);
         return reply.code(500).send({ error: 'Failed to add wallet' });

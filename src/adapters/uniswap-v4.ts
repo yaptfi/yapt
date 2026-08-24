@@ -112,9 +112,7 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
 
     const scanProvider = this.getScanProvider(config.chainId);
     if (!scanProvider) {
-      console.warn('[Uniswap v4] No scan-capable RPC provider available - skipping Uniswap discovery');
-      console.warn('[Uniswap v4] Configure an RPC provider with supportsLargeBlockScans=true (e.g., Infura)');
-      return [];
+      throw new Error('[Uniswap v4] No scan-capable RPC provider available');
     }
 
     const fromBlock = config.deployBlock ?? 21688823;
@@ -175,7 +173,8 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
         });
       }
     } catch (error) {
-      console.error(`Error discovering Uniswap v4 positions for ${walletAddress}:`, error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Uniswap v4 inventory scan failed: ${message}`);
     }
 
     return positions;

@@ -355,8 +355,10 @@
         <div><strong>How provider routing works:</strong> Ethereum uses the main URL. Arbitrum uses the optional Arbitrum URL when present, then health and rate limits apply per chain.</div>
         <div style="margin-top: 0.35rem;"><strong>Priority:</strong> higher numbers are preferred first. <strong>0</strong> means neutral/default (not disabled).</div>
         <div style="margin-top: 0.35rem;"><strong>Calls/Second:</strong> max average request rate allowed for this provider. Keep below your vendor quota.</div>
-        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> “Historical Block Scans” enables adaptive `eth_getLogs` routing and failover; “ENS” is required for `*.eth` resolution.</div>
+        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> “Use for Historical Scans” opts the provider into live `eth_getLogs` traffic; it does not test whether the endpoint supports scans. “ENS” is required for `*.eth` resolution.</div>
       </div>
+
+      <div id="rpcProviderStatus" class="status-message" role="status" style="display: none; margin-bottom: 1rem;"></div>
 
       <div class="add-provider-form">
         <h3 style="margin-top: 0; margin-bottom: 1rem;">Add New Provider</h3>
@@ -391,11 +393,11 @@
             </div>
             <div class="form-field">
               <label for="providerSupportsLargeScans" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" id="providerSupportsLargeScans" checked style="width: auto; height: auto; margin: 0;">
-                <span>Historical Block Scans</span>
+                <input type="checkbox" id="providerSupportsLargeScans" style="width: auto; height: auto; margin: 0;">
+                <span>Use for Historical Scans</span>
               </label>
               <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
-                Check if historical eth_getLogs works; block-range limits are adapted automatically.
+                This enables live scan routing; it is not a capability test. Leave unchecked until historical eth_getLogs is known to work.
               </div>
             </div>
             <div class="form-field">
@@ -763,10 +765,11 @@
                           <input
                             type="checkbox"
                             ${provider.supportsLargeBlockScans ? 'checked' : ''}
-                            onchange="toggleCapability(${provider.id}, 'supportsLargeBlockScans', this.checked)"
+                            onchange="toggleCapability(${provider.id}, 'supportsLargeBlockScans', this.checked, this)"
+                            title="Routes live historical eth_getLogs traffic through this provider; does not test support"
                             style="cursor: pointer;"
                           >
-                          <span>Block Scans</span>
+                          <span>Scan Routing</span>
                         </label>
                         <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
                           <input
@@ -876,7 +879,7 @@
         event.target.reset();
         document.getElementById('providerCallsPerSec').value = '10';
         document.getElementById('providerPriority').value = '0';
-        document.getElementById('providerSupportsLargeScans').checked = true;
+        document.getElementById('providerSupportsLargeScans').checked = false;
         document.getElementById('providerSupportsENS').checked = true;
 
         // Reload providers table
@@ -940,6 +943,7 @@
         }
 
         await loadProviders();
+        showRpcProviderStatus('Provider settings saved and RPC routing reloaded.', 'success');
       } catch (error) {
         alert(`Failed to save provider tuning: ${error.message}`);
       }
@@ -961,13 +965,37 @@
         }
 
         await loadProviders();
+        showRpcProviderStatus(
+          `Provider ${isActive ? 'enabled' : 'disabled'} and RPC routing reloaded.`,
+          'success'
+        );
       } catch (error) {
         alert(`Failed to toggle provider: ${error.message}`);
       }
     }
 
-    async function toggleCapability(providerId, capability, value) {
+    function showRpcProviderStatus(message, type = 'success') {
+      const statusEl = document.getElementById('rpcProviderStatus');
+      statusEl.textContent = message;
+      statusEl.className = `status-message ${type}`;
+      statusEl.style.display = 'block';
+    }
+
+    async function toggleCapability(providerId, capability, value, checkboxEl) {
+      if (
+        capability === 'supportsLargeBlockScans' &&
+        value &&
+        !confirm(
+          'Enable this provider for live historical block scans?\n\n' +
+          'This does not test support. The next wallet scan may send many eth_getLogs requests to this endpoint.'
+        )
+      ) {
+        if (checkboxEl) checkboxEl.checked = false;
+        return;
+      }
+
       try {
+        showRpcProviderStatus('Updating provider capability and reloading RPC routing…');
         const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -981,10 +1009,19 @@
           throw new Error(data.error || 'Failed to update capability');
         }
 
-        // Silently reload - no alert needed for checkbox toggles
         await loadProviders();
+        const capabilityName = capability === 'supportsLargeBlockScans'
+          ? 'Historical scan routing'
+          : 'ENS resolution';
+        const extra = capability === 'supportsLargeBlockScans' && value
+          ? ' This enabled live routing; it did not test the endpoint.'
+          : '';
+        showRpcProviderStatus(
+          `${capabilityName} ${value ? 'enabled' : 'disabled'} and RPC routing reloaded.${extra}`,
+          'success'
+        );
       } catch (error) {
-        alert(`Failed to update capability: ${error.message}`);
+        showRpcProviderStatus(`Failed to update capability: ${error.message}`, 'error');
         // Reload to revert the checkbox
         await loadProviders();
       }

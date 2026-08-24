@@ -178,6 +178,18 @@ describe('UniswapV4WbtcUsdcRewardsAdapter', () => {
     expect(discovered).toEqual([]);
   });
 
+  it('propagates terminal inventory scan failures to the discovery service', async () => {
+    (getWalletUniswapV4Inventory as jest.Mock).mockRejectedValue(
+      new Error('all scan-capable providers failed')
+    );
+
+    const adapter = new UniswapV4WbtcUsdcRewardsAdapter();
+
+    await expect(adapter.discover(WALLET_ADDRESS)).rejects.toThrow(
+      'Uniswap v4 WBTC/USDC inventory scan failed: all scan-capable providers failed'
+    );
+  });
+
   it('reads rewards using the position chain provider instead of the default provider', async () => {
     const provider = { name: 'arbitrum-provider' };
     (getProviderForChain as jest.Mock).mockReturnValue(provider);

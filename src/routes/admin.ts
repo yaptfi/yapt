@@ -285,7 +285,16 @@ export default async function adminRoutes(server: FastifyInstance) {
       // Reload providers to apply changes
       await reloadRPCProviders();
 
-      server.log.info({ providerId: provider.id, name: provider.name, updates }, 'RPC provider updated');
+      server.log.info(
+        {
+          providerId: provider.id,
+          name: provider.name,
+          changedFields: Object.keys(updates),
+          scanRoutingEnabled: updates.supportsLargeBlockScans,
+          isActive: updates.isActive,
+        },
+        'RPC provider updated and routing reloaded'
+      );
 
       return reply.send({ provider });
     } catch (error) {
