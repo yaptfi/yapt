@@ -2,7 +2,10 @@
 
 ## Overview
 
-The RPC Manager system provides intelligent load balancing, rate limiting, and automatic failover across multiple Ethereum RPC providers. It transparently replaces the single provider setup with minimal code changes.
+The RPC Manager system provides load balancing, rate limiting, and automatic
+failover across Ethereum and Arbitrum RPC providers. For the current
+historical-scan routing and capability-probe runbook, also see
+[`rpc-provider-routing.md`](rpc-provider-routing.md).
 
 ## Architecture
 
@@ -12,7 +15,7 @@ The RPC Manager system provides intelligent load balancing, rate limiting, and a
    - Token bucket rate limiting per provider
    - Round-robin load balancing
    - Automatic failover on errors
-   - Health tracking with exponential backoff
+   - Health tracking with a temporary error cooldown
    - Call queue management
 
 2. **RPCProxyProvider** (`src/utils/rpc-proxy-provider.ts`)
@@ -51,23 +54,21 @@ ETH_RPC_LIMITS=10,5,8
 - If `ETH_RPC_LIMITS` is omitted, defaults to 10 calls/sec per provider
 - Mismatched lengths will show a warning and use defaults
 
-### Option 3: Database-Managed Providers (Enterprise)
+### Option 3: Database-Managed Providers (Recommended)
 
 1. **Run the migration:**
    ```bash
    npm run migrate
    ```
 
-2. **Insert providers via SQL:**
-   ```sql
-   INSERT INTO rpc_provider (name, url, calls_per_second, calls_per_day, priority, is_active)
-   VALUES
-     ('Infura Primary', 'https://mainnet.infura.io/v3/KEY1', 25, 100000, 100, true),
-     ('Alchemy Backup', 'https://eth-mainnet.g.alchemy.com/v2/KEY2', 15, 50000, 50, true),
-     ('Public RPC', 'https://eth.llamarpc.com', 5, NULL, 10, true);
-   ```
+2. Open `/admin.html` and use **Add RPC Provider Wizard**. Paste the vendor's
+   Ethereum URL (including its API key) and, optionally, its separate Arbitrum
+   URL.
+3. Run **Test URLs & Detect Capabilities**. The app verifies both chain identity
+   and historical log support. Edit and retry any failed URL before saving.
 
-3. **Manage at runtime via API** (see below)
+Avoid direct SQL insertion: it bypasses the active capability probe and leaves
+the admin page without evidence about the endpoint.
 
 **Priority:**
 1. Database (if providers exist)
@@ -85,6 +86,10 @@ CREATE TABLE rpc_provider (
   calls_per_day INTEGER,
   priority INTEGER NOT NULL DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
+  supports_ethereum_block_scans BOOLEAN NOT NULL DEFAULT false,
+  supports_arbitrum_block_scans BOOLEAN NOT NULL DEFAULT false,
+  ethereum_probe JSONB,
+  arbitrum_probe JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -98,6 +103,28 @@ CREATE TABLE rpc_provider (
 - **calls_per_day**: Optional daily quota (resets at midnight UTC)
 - **priority**: Higher values = preferred (used for sorting)
 - **is_active**: Enable/disable without deletion
+- **supports_ethereum_block_scans / supports_arbitrum_block_scans**:
+  per-chain routing eligibility set by active probes
+- **ethereum_probe / arbitrum_probe**: latest sanitized connectivity and
+  historical-log evidence (no endpoint URL or API key)
+
+## Admin health and capability display
+
+The provider table deliberately shows two different concepts:
+
+- **Runtime state** is passive health observed from real requests. It starts with
+  no error data and changes as RPCManager sees failures and recoveries.
+- **Verified capabilities** come from direct provider-specific checks of
+  `eth_chainId`, `eth_blockNumber`, and a historical `eth_getLogs` range.
+
+Use **Retest saved** for an immediate active check. Missing and stale probe records
+are refreshed automatically while the admin page is open. A transient throttle
+is shown as inconclusive and does not overwrite the last conclusive scan-routing
+decision.
+
+Use **Edit & test** to load an existing provider into the add/edit wizard. It
+prefills both complete endpoint URLs and local limits, permits corrections, and
+requires a new successful test before the edited configuration can be saved.
 
 ## Features
 
@@ -189,56 +216,19 @@ await reloadRPCProviders();
 console.log('Providers reloaded from database');
 ```
 
-### Adding Providers Programmatically
+## Admin API endpoints
 
-```typescript
-import { createRPCProvider } from './models/rpc-provider';
-import { reloadRPCProviders } from './utils/ethereum';
+All endpoints are admin-authenticated:
 
-await createRPCProvider({
-  name: 'New Provider',
-  url: 'https://new-rpc.example.com',
-  callsPerSecond: 20,
-  priority: 75,
-  isActive: true,
-});
-
-await reloadRPCProviders();
-```
-
-## API Endpoints (Optional)
-
-You can add management endpoints to your Fastify server:
-
-```typescript
-// GET /api/rpc/status
-fastify.get('/api/rpc/status', async (request, reply) => {
-  const status = getRPCStatus();
-  return status || { error: 'RPC manager not initialized' };
-});
-
-// POST /api/rpc/reload
-fastify.post('/api/rpc/reload', async (request, reply) => {
-  await reloadRPCProviders();
-  return { success: true, message: 'Providers reloaded' };
-});
-
-// POST /api/rpc/providers
-fastify.post('/api/rpc/providers', async (request, reply) => {
-  const { name, url, callsPerSecond, priority } = request.body;
-
-  const provider = await createRPCProvider({
-    name,
-    url,
-    callsPerSecond,
-    priority: priority || 0,
-    isActive: true,
-  });
-
-  await reloadRPCProviders();
-  return provider;
-});
-```
+- `GET /api/admin/rpc-providers`: stored configuration, probes, and passive
+  runtime status;
+- `POST /api/admin/rpc-providers/probe`: test editable URLs without saving;
+- `POST /api/admin/rpc-providers`: re-test, create, and reload routing;
+- `POST /api/admin/rpc-providers/:id/probe`: actively test and persist an
+  existing provider's capabilities;
+- `PATCH /api/admin/rpc-providers/:id`: update limits or URLs (changed URLs are
+  tested before saving);
+- `DELETE /api/admin/rpc-providers/:id`: remove and reload routing.
 
 ## Testing
 

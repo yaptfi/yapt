@@ -280,6 +280,47 @@
       color: var(--text);
     }
 
+    .rpc-wizard-step {
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+      margin-top: 1rem;
+    }
+
+    .rpc-wizard-step:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    .rpc-wizard-step h4 {
+      margin: 0 0 0.75rem;
+    }
+
+    .rpc-probe-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 0.75rem;
+      margin: 0.75rem 0;
+    }
+
+    .rpc-probe-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      background: var(--bg);
+      font-size: 0.8rem;
+    }
+
+    .rpc-probe-card.ok { border-color: var(--primary); }
+    .rpc-probe-card.warn { border-color: var(--warning); }
+    .rpc-probe-card.error { border-color: var(--danger); }
+
+    .rpc-probe-line {
+      margin-top: 0.35rem;
+      color: var(--text-dim);
+      overflow-wrap: anywhere;
+    }
+
     .chain-badge {
       display: inline-block;
       font-size: 0.7rem;
@@ -355,64 +396,66 @@
         <div><strong>How provider routing works:</strong> Ethereum uses the main URL. Arbitrum uses the optional Arbitrum URL when present, then health and rate limits apply per chain.</div>
         <div style="margin-top: 0.35rem;"><strong>Priority:</strong> higher numbers are preferred first. <strong>0</strong> means neutral/default (not disabled).</div>
         <div style="margin-top: 0.35rem;"><strong>Calls/Second:</strong> max average request rate allowed for this provider. Keep below your vendor quota.</div>
-        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> “Use for Historical Scans” opts the provider into live `eth_getLogs` traffic; it does not test whether the endpoint supports scans. “ENS” is required for `*.eth` resolution.</div>
+        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> the wizard and provider tests detect chain connectivity and historical `eth_getLogs` support automatically. Range-limited endpoints are enabled when their tested limit is usable.</div>
+        <div style="margin-top: 0.35rem;"><strong>Runtime state vs. verification:</strong> runtime state reflects passive live traffic and backoff. Timestamped capability cards are the active endpoint tests.</div>
       </div>
 
       <div id="rpcProviderStatus" class="status-message" role="status" style="display: none; margin-bottom: 1rem;"></div>
 
-      <div class="add-provider-form">
-        <h3 style="margin-top: 0; margin-bottom: 1rem;">Add New Provider</h3>
-        <form id="addProviderForm" onsubmit="addProvider(event)">
-          <div class="form-grid">
-            <div class="form-field">
-              <label for="providerName">Name *</label>
-              <input type="text" id="providerName" required placeholder="e.g., Infura Primary">
-            </div>
-            <div class="form-field">
-              <label for="providerUrl">URL *</label>
-              <input type="url" id="providerUrl" required placeholder="https://mainnet.infura.io/v3/...">
-            </div>
-            <div class="form-field">
-              <label for="providerArbitrumUrl">Arbitrum URL (optional)</label>
-              <input type="url" id="providerArbitrumUrl" placeholder="https://arbitrum-mainnet.infura.io/v3/...">
-            </div>
-            <div class="form-field">
-              <label for="providerCallsPerSec">Calls/Second *</label>
-              <input type="number" id="providerCallsPerSec" required min="0.1" max="1000" step="0.1" value="10">
-            </div>
-            <div class="form-field">
-              <label for="providerCallsPerDay">Calls/Day (optional)</label>
-              <input type="number" id="providerCallsPerDay" min="1" placeholder="Leave empty for unlimited">
-            </div>
-            <div class="form-field">
-              <label for="providerPriority">Priority *</label>
-              <input type="number" id="providerPriority" required value="0" placeholder="Higher = preferred">
-              <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
-                Higher value = preferred first. `0` is a normal default.
+      <div class="add-provider-form" id="rpcProviderWizard">
+        <h3 id="rpcWizardTitle" style="margin-top: 0; margin-bottom: 0.5rem;">Add RPC Provider Wizard</h3>
+        <p id="rpcWizardIntro" style="margin-top: 0; color: var(--text-dim); font-size: 0.875rem;">
+          Paste each vendor's complete endpoint URL, including its API key path or query parameter. Test it, edit anything that fails, and retry. Capabilities are detected rather than self-declared.
+        </p>
+        <form id="addProviderForm" onsubmit="testProviderWizard(event)">
+          <div class="rpc-wizard-step">
+            <h4>1. Provider and editable endpoints</h4>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="providerName">Name *</label>
+                <input type="text" id="providerName" required placeholder="e.g., Infura Primary">
               </div>
-            </div>
-            <div class="form-field">
-              <label for="providerSupportsLargeScans" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" id="providerSupportsLargeScans" style="width: auto; height: auto; margin: 0;">
-                <span>Use for Historical Scans</span>
-              </label>
-              <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
-                This enables live scan routing; it is not a capability test. Leave unchecked until historical eth_getLogs is known to work.
+              <div class="form-field">
+                <label for="providerUrl">Ethereum URL *</label>
+                <input type="url" id="providerUrl" required placeholder="https://mainnet.infura.io/v3/..." oninput="invalidateRPCWizardProbe()">
               </div>
-            </div>
-            <div class="form-field">
-              <label for="providerSupportsENS" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" id="providerSupportsENS" checked style="width: auto; height: auto; margin: 0;">
-                <span>ENS Resolution</span>
-              </label>
-              <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
-                Uncheck if provider doesn't support ENS
+              <div class="form-field">
+                <label for="providerArbitrumUrl">Arbitrum URL (optional)</label>
+                <input type="url" id="providerArbitrumUrl" placeholder="https://arbitrum-mainnet.infura.io/v3/..." oninput="invalidateRPCWizardProbe()">
               </div>
             </div>
           </div>
-          <div class="form-actions">
-            <button type="submit" class="btn-primary">Add Provider</button>
-            <span id="addProviderStatus" style="font-size: 0.875rem; color: var(--text-dim);"></span>
+
+          <div class="rpc-wizard-step">
+            <h4>2. Local routing limits</h4>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="providerCallsPerSec">Calls/Second *</label>
+                <input type="number" id="providerCallsPerSec" required min="0.1" max="1000" step="0.1" value="10">
+              </div>
+              <div class="form-field">
+                <label for="providerCallsPerDay">Calls/Day (optional)</label>
+                <input type="number" id="providerCallsPerDay" min="1" placeholder="Leave empty for unlimited">
+              </div>
+              <div class="form-field">
+                <label for="providerPriority">Priority *</label>
+                <input type="number" id="providerPriority" required value="0" placeholder="Higher = preferred">
+                <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
+                  Higher value = preferred first. 0 is a normal default.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rpc-wizard-step">
+            <h4>3. Automatic capability checks</h4>
+            <div id="rpcWizardResults" style="display: none;"></div>
+            <div class="form-actions">
+              <button type="submit" class="btn-primary" id="providerProbeBtn">Test URLs & Detect Capabilities</button>
+              <button type="button" class="btn-primary" id="providerAddBtn" onclick="saveRPCWizardProvider()" style="display: none;">Add Verified Provider</button>
+              <button type="button" class="btn-small" id="providerCancelEditBtn" onclick="resetRPCWizard()" style="display: none;">Cancel editing</button>
+              <span id="addProviderStatus" style="font-size: 0.875rem; color: var(--text-dim);"></span>
+            </div>
           </div>
         </form>
       </div>
@@ -431,6 +474,32 @@
     const API_BASE = (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.apiBase)
       ? window.APP_CONFIG.apiBase
       : '/api';
+
+    const RPC_PROBE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+    let rpcWizardProbe = null;
+    let rpcWizardProbeUrls = null;
+    let rpcWizardEditingProviderId = null;
+    let rpcProvidersById = new Map();
+    const automaticProbeAttempts = new Map();
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function maskRpcUrl(value) {
+      if (!value) return 'Not configured';
+      try {
+        const parsed = new URL(value);
+        return `${parsed.protocol}//${parsed.host}/…`;
+      } catch {
+        return 'Configured URL';
+      }
+    }
 
     // Check authentication and admin status on page load
     async function checkAuth() {
@@ -590,6 +659,201 @@
 
     // === RPC Provider Management ===
 
+    function formatProbeTime(checkedAt) {
+      if (!checkedAt) return 'Never tested';
+      const timestamp = new Date(checkedAt);
+      if (Number.isNaN(timestamp.getTime())) return 'Unknown time';
+      return timestamp.toLocaleString();
+    }
+
+    function probeIsStale(probe) {
+      if (!probe?.checkedAt) return true;
+      const checkedAtMs = new Date(probe.checkedAt).getTime();
+      return !Number.isFinite(checkedAtMs) || Date.now() - checkedAtMs > RPC_PROBE_MAX_AGE_MS;
+    }
+
+    function probeCardClass(probe) {
+      if (!probe?.basic?.ok) return 'error';
+      if (probe.blockScan?.compatible) {
+        return probe.blockScan.status === 'range-limited' ? 'warn' : 'ok';
+      }
+      return probe.blockScan?.conclusive ? 'warn' : 'error';
+    }
+
+    function renderProbeDetails(label, probe, scanRoutingEnabled) {
+      if (!probe) {
+        return `
+          <div class="rpc-probe-card warn">
+            <strong>${escapeHtml(label)}</strong>
+            <div class="rpc-probe-line">Not tested yet</div>
+            <div class="rpc-probe-line">Historical scan routing: ${scanRoutingEnabled ? 'enabled from legacy configuration' : 'disabled'}</div>
+          </div>
+        `;
+      }
+
+      const basicText = probe.basic?.ok
+        ? `Connected${probe.basic.blockNumber !== undefined ? ` at block ${Number(probe.basic.blockNumber).toLocaleString()}` : ''}`
+        : `Connection failed: ${probe.basic?.message || 'Unknown error'}`;
+      const scanText = probe.blockScan?.message || 'Historical logs were not tested';
+      return `
+        <div class="rpc-probe-card ${probeCardClass(probe)}">
+          <strong>${escapeHtml(label)}</strong>
+          <div class="rpc-probe-line">Basic RPC: ${escapeHtml(basicText)}</div>
+          <div class="rpc-probe-line">Historical logs: ${escapeHtml(scanText)}</div>
+          <div class="rpc-probe-line">Scan routing: ${scanRoutingEnabled ? 'enabled' : 'disabled'}</div>
+          <div class="rpc-probe-line">Checked: ${escapeHtml(formatProbeTime(probe.checkedAt))}</div>
+        </div>
+      `;
+    }
+
+    function getWizardUrls() {
+      return {
+        url: document.getElementById('providerUrl').value.trim(),
+        arbitrumUrl: document.getElementById('providerArbitrumUrl').value.trim(),
+      };
+    }
+
+    function wizardUrlsMatchProbe() {
+      if (!rpcWizardProbeUrls) return false;
+      const current = getWizardUrls();
+      return current.url === rpcWizardProbeUrls.url && current.arbitrumUrl === rpcWizardProbeUrls.arbitrumUrl;
+    }
+
+    function resetRPCWizard() {
+      rpcWizardEditingProviderId = null;
+      rpcWizardProbe = null;
+      rpcWizardProbeUrls = null;
+      document.getElementById('addProviderForm').reset();
+      document.getElementById('providerCallsPerSec').value = '10';
+      document.getElementById('providerPriority').value = '0';
+      document.getElementById('rpcWizardTitle').textContent = 'Add RPC Provider Wizard';
+      document.getElementById('rpcWizardIntro').textContent =
+        "Paste each vendor's complete endpoint URL, including its API key path or query parameter. Test it, edit anything that fails, and retry. Capabilities are detected rather than self-declared.";
+      document.getElementById('providerAddBtn').textContent = 'Add Verified Provider';
+      document.getElementById('providerAddBtn').style.display = 'none';
+      document.getElementById('providerCancelEditBtn').style.display = 'none';
+      document.getElementById('rpcWizardResults').style.display = 'none';
+      document.getElementById('rpcWizardResults').innerHTML = '';
+      document.getElementById('addProviderStatus').textContent = '';
+    }
+
+    function editProviderWithWizard(providerId) {
+      const provider = rpcProvidersById.get(providerId);
+      if (!provider) {
+        showRpcProviderStatus('Provider details are no longer available. Refresh the page and try again.', 'error');
+        return;
+      }
+
+      rpcWizardEditingProviderId = providerId;
+      rpcWizardProbe = null;
+      rpcWizardProbeUrls = null;
+      document.getElementById('providerName').value = provider.name || '';
+      document.getElementById('providerUrl').value = provider.url || '';
+      document.getElementById('providerArbitrumUrl').value = provider.arbitrumUrl || '';
+      document.getElementById('providerCallsPerSec').value = String(provider.callsPerSecond ?? 10);
+      document.getElementById('providerCallsPerDay').value = provider.callsPerDay == null
+        ? ''
+        : String(provider.callsPerDay);
+      document.getElementById('providerPriority').value = String(provider.priority ?? 0);
+      document.getElementById('rpcWizardTitle').textContent = `Edit & Test ${provider.name}`;
+      document.getElementById('rpcWizardIntro').textContent =
+        'These are the saved endpoints, including their API-key portions. Edit either URL, run the checks, then save the verified configuration.';
+      document.getElementById('providerAddBtn').textContent = 'Save Verified Provider';
+      document.getElementById('providerAddBtn').style.display = 'none';
+      document.getElementById('providerCancelEditBtn').style.display = 'inline-flex';
+      document.getElementById('rpcWizardResults').style.display = 'none';
+      document.getElementById('rpcWizardResults').innerHTML = '';
+      const statusEl = document.getElementById('addProviderStatus');
+      statusEl.textContent = 'Run the capability checks before saving changes.';
+      statusEl.style.color = 'var(--text-dim)';
+      document.getElementById('rpcProviderWizard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('providerUrl').focus({ preventScroll: true });
+    }
+
+    function invalidateRPCWizardProbe() {
+      rpcWizardProbe = null;
+      rpcWizardProbeUrls = null;
+      document.getElementById('providerAddBtn').style.display = 'none';
+      const resultsEl = document.getElementById('rpcWizardResults');
+      if (resultsEl.style.display !== 'none') {
+        resultsEl.innerHTML = '<div class="rpc-probe-card warn">Endpoint changed. Test the current URLs again before saving.</div>';
+      }
+      const statusEl = document.getElementById('addProviderStatus');
+      statusEl.textContent = '';
+    }
+
+    function renderWizardProbe(probe) {
+      const resultsEl = document.getElementById('rpcWizardResults');
+      const arbHtml = probe.arbitrum
+        ? renderProbeDetails('Arbitrum', probe.arbitrum, probe.arbitrum.blockScan.compatible)
+        : '<div class="rpc-probe-card"><strong>Arbitrum</strong><div class="rpc-probe-line">No endpoint configured</div></div>';
+      resultsEl.innerHTML = `
+        <div class="rpc-probe-grid">
+          ${renderProbeDetails('Ethereum', probe.ethereum, probe.ethereum.blockScan.compatible)}
+          ${arbHtml}
+        </div>
+        <div class="rpc-probe-line" style="margin-top:0.75rem;">
+          ${probe.canSave
+            ? `Checks are conclusive. You can ${rpcWizardEditingProviderId === null ? 'add this provider' : 'save these changes'}; compatible historical-scan routes will be enabled automatically.`
+            : 'The checks did not complete conclusively. Edit the endpoint if needed, then retry.'}
+        </div>
+      `;
+      resultsEl.style.display = 'block';
+      document.getElementById('providerAddBtn').style.display = probe.canSave ? 'inline-flex' : 'none';
+    }
+
+    async function testProviderWizard(event) {
+      event.preventDefault();
+      const form = document.getElementById('addProviderForm');
+      if (!form.reportValidity()) return;
+
+      const urls = getWizardUrls();
+      const statusEl = document.getElementById('addProviderStatus');
+      const probeBtn = document.getElementById('providerProbeBtn');
+      const addBtn = document.getElementById('providerAddBtn');
+
+      rpcWizardProbe = null;
+      rpcWizardProbeUrls = null;
+      addBtn.style.display = 'none';
+      probeBtn.disabled = true;
+      statusEl.textContent = 'Testing connectivity and historical block scans…';
+      statusEl.style.color = 'var(--text-dim)';
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/rpc-providers/probe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            url: urls.url,
+            arbitrumUrl: urls.arbitrumUrl || undefined,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to test RPC URLs');
+
+        const currentUrls = getWizardUrls();
+        if (currentUrls.url !== urls.url || currentUrls.arbitrumUrl !== urls.arbitrumUrl) {
+          statusEl.textContent = 'The endpoint changed while testing. Test the current URLs again.';
+          statusEl.style.color = 'var(--warning)';
+          return;
+        }
+
+        rpcWizardProbe = data.probe;
+        rpcWizardProbeUrls = urls;
+        renderWizardProbe(data.probe);
+        statusEl.textContent = data.probe.canSave
+          ? 'Capability checks passed.'
+          : 'Capability checks need attention. You can edit the URLs and retry.';
+        statusEl.style.color = data.probe.canSave ? 'var(--primary)' : 'var(--warning)';
+      } catch (error) {
+        statusEl.textContent = `Test failed: ${error.message}`;
+        statusEl.style.color = 'var(--danger)';
+      } finally {
+        probeBtn.disabled = false;
+      }
+    }
+
     async function loadProviders() {
       const container = document.getElementById('providersTable');
 
@@ -605,6 +869,7 @@
         const data = await response.json();
         const providers = data.providers || [];
         const status = data.status;
+        rpcProvidersById = new Map(providers.map((provider) => [provider.id, provider]));
 
         if (providers.length === 0) {
           container.innerHTML = '<p class="empty-state">No RPC providers configured. Add one above or configure via environment variables.</p>';
@@ -635,6 +900,7 @@
             <strong>Active historical-scan routes:</strong>
             Ethereum ${ethScanCount} provider${ethScanCount === 1 ? '' : 's'};
             Arbitrum ${arbScanCount} provider${arbScanCount === 1 ? '' : 's'}.
+            ${ethScanCount < 2 ? '<strong>Ethereum scan failover is unavailable.</strong>' : 'Ethereum scan failover is available.'}
             ${arbScanCount < 2 ? '<strong>Arbitrum scan failover is unavailable.</strong>' : 'Arbitrum scan failover is available.'}
           </div>
         `;
@@ -642,12 +908,12 @@
         container.innerHTML = `${scanRoutingSummary}
           <table style="table-layout: fixed; width: 100%;">
             <colgroup>
-              <col style="width: 10%;">
-              <col style="width: 16%;">
-              <col style="width: 10%;">
-              <col style="width: 12%;">
-              <col style="width: 18%;">
-              <col style="width: 10%;">
+              <col style="width: 8%;">
+              <col style="width: 14%;">
+              <col style="width: 7%;">
+              <col style="width: 26%;">
+              <col style="width: 13%;">
+              <col style="width: 8%;">
               <col style="width: 12%;">
               <col style="width: 12%;">
             </colgroup>
@@ -656,9 +922,9 @@
                 <th>Name</th>
                 <th>URL</th>
                 <th>Chains</th>
-                <th>Capabilities</th>
+                <th>Verified capabilities</th>
                 <th>Rate Limits & Priority</th>
-                <th>Status</th>
+                <th>Runtime state</th>
                 <th>Metrics</th>
                 <th>Actions</th>
               </tr>
@@ -681,13 +947,13 @@
                   hasAnyActiveChain = true;
                   if (providerEthStatus?.isHealthy === false) degraded = true;
                   if (providerEthStatus?.isHealthy === true) hasHealthy = true;
-                  statusLabels.push(`ETH ${providerEthStatus ? (providerEthStatus.isHealthy ? 'OK' : 'Degraded') : 'No Data'}`);
+                  statusLabels.push(`ETH ${providerEthStatus ? (providerEthStatus.isHealthy ? 'Ready' : 'Degraded') : 'No Data'}`);
                 }
                 if (supportsArbitrum) {
                   hasAnyActiveChain = true;
                   if (providerArbStatus?.isHealthy === false) degraded = true;
                   if (providerArbStatus?.isHealthy === true) hasHealthy = true;
-                  statusLabels.push(`ARB ${providerArbStatus ? (providerArbStatus.isHealthy ? 'OK' : 'Degraded') : 'No Data'}`);
+                  statusLabels.push(`ARB ${providerArbStatus ? (providerArbStatus.isHealthy ? 'Ready' : 'Degraded') : 'No Data'}`);
                 }
 
                 const statusClass = !provider.isActive
@@ -704,7 +970,7 @@
                     : degraded
                       ? 'Degraded'
                       : hasHealthy
-                        ? 'Healthy'
+                        ? 'Available'
                         : 'No Data';
 
                 const callsPerDay = provider.callsPerDay
@@ -740,18 +1006,15 @@
 
                 return `
                   <tr>
-                    <td style="font-weight: 500;">${provider.name}</td>
+                    <td style="font-weight: 500;">${escapeHtml(provider.name)}</td>
                     <td class="wrap-allowed">
-                      <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${provider.url}">
-                        ETH: ${provider.url}
+                      <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ETH: ${escapeHtml(maskRpcUrl(provider.url))}
                       </div>
-                      <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem;" title="${provider.arbitrumUrl || ''}">
-                        ARB: ${provider.arbitrumUrl || 'Not configured'}
+                      <div style="font-family: 'Monaco', 'Courier New', monospace; font-size: 0.75rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.25rem;">
+                        ARB: ${escapeHtml(maskRpcUrl(provider.arbitrumUrl))}
                       </div>
-                      <label style="display:block; margin-top:0.5rem; font-size:0.75rem; color:var(--text-dim);">
-                        Arbitrum URL
-                        <input class="compact-input" id="arburl-${provider.id}" type="url" placeholder="Optional" value="${provider.arbitrumUrl || ''}">
-                      </label>
+                      <div class="rpc-probe-line">Use Edit &amp; test to view or change complete URLs.</div>
                     </td>
                     <td>
                       <div style="display:flex; flex-direction:column;">
@@ -760,26 +1023,11 @@
                       </div>
                     </td>
                     <td>
-                      <div style="display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem;">
-                        <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                          <input
-                            type="checkbox"
-                            ${provider.supportsLargeBlockScans ? 'checked' : ''}
-                            onchange="toggleCapability(${provider.id}, 'supportsLargeBlockScans', this.checked, this)"
-                            title="Routes live historical eth_getLogs traffic through this provider; does not test support"
-                            style="cursor: pointer;"
-                          >
-                          <span>Scan Routing</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
-                          <input
-                            type="checkbox"
-                            ${provider.supportsENS !== false ? 'checked' : ''}
-                            onchange="toggleCapability(${provider.id}, 'supportsENS', this.checked)"
-                            style="cursor: pointer;"
-                          >
-                          <span>ENS</span>
-                        </label>
+                      <div style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.75rem;">
+                        ${renderProbeDetails('Ethereum', provider.ethereumProbe, provider.supportsEthereumBlockScans === true)}
+                        ${supportsArbitrum
+                          ? renderProbeDetails('Arbitrum', provider.arbitrumProbe, provider.supportsArbitrumBlockScans === true)
+                          : '<div class="rpc-probe-line">Arbitrum: not configured</div>'}
                       </div>
                     </td>
                     <td>
@@ -796,7 +1044,7 @@
                           Priority
                           <input class="compact-input" id="priority-${provider.id}" type="number" value="${provider.priority}">
                         </label>
-                        <button class="btn-small" onclick="saveProviderTuning(${provider.id})">Save</button>
+                        <button class="btn-small" onclick="saveProviderTuning(${provider.id})">Save limits</button>
                       </div>
                     </td>
                     <td>
@@ -807,7 +1055,19 @@
                     </td>
                     <td>${metricsHtml}</td>
                     <td>
-                      <div style="display: flex; gap: 0.5rem;">
+                      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <button
+                          class="btn-small"
+                          onclick="editProviderWithWizard(${provider.id})"
+                        >
+                          Edit &amp; test
+                        </button>
+                        <button
+                          class="btn-small"
+                          onclick="probeExistingProvider(${provider.id}, this)"
+                        >
+                          Retest saved
+                        </button>
                         <button
                           class="btn-toggle ${provider.isActive ? '' : 'inactive'}"
                           onclick="toggleProvider(${provider.id}, ${!provider.isActive})"
@@ -816,7 +1076,7 @@
                         </button>
                         <button
                           class="btn-delete"
-                          onclick="deleteProvider(${provider.id}, '${provider.name}')"
+                          onclick="deleteProvider(${provider.id})"
                         >
                           Delete
                         </button>
@@ -828,113 +1088,141 @@
             </tbody>
           </table>
         `;
+
+        void probeStaleProviders(providers);
       } catch (error) {
         console.error('Failed to load providers:', error);
         container.innerHTML = `<p class="empty-state" style="color: var(--danger)">Error loading providers: ${error.message}</p>`;
       }
     }
 
-    async function addProvider(event) {
-      event.preventDefault();
-
+    async function saveRPCWizardProvider() {
       const statusEl = document.getElementById('addProviderStatus');
-      const submitBtn = event.target.querySelector('button[type="submit"]');
+      const addBtn = document.getElementById('providerAddBtn');
+      const form = document.getElementById('addProviderForm');
+      if (!form.reportValidity()) return;
 
+      if (!rpcWizardProbe?.canSave || !wizardUrlsMatchProbe()) {
+        statusEl.textContent = 'Test the current URLs again before saving.';
+        statusEl.style.color = 'var(--warning)';
+        addBtn.style.display = 'none';
+        return;
+      }
+
+      const editingProviderId = rpcWizardEditingProviderId;
       const provider = {
         name: document.getElementById('providerName').value.trim(),
         url: document.getElementById('providerUrl').value.trim(),
         arbitrumUrl: document.getElementById('providerArbitrumUrl').value.trim() || undefined,
         callsPerSecond: parseFloat(document.getElementById('providerCallsPerSec').value),
         callsPerDay: document.getElementById('providerCallsPerDay').value
-          ? parseInt(document.getElementById('providerCallsPerDay').value)
+          ? Number(document.getElementById('providerCallsPerDay').value)
           : undefined,
-        priority: parseInt(document.getElementById('providerPriority').value),
+        priority: Number(document.getElementById('providerPriority').value),
         isActive: true,
-        supportsLargeBlockScans: document.getElementById('providerSupportsLargeScans').checked,
-        supportsENS: document.getElementById('providerSupportsENS').checked,
       };
+      const requestBody = editingProviderId === null
+        ? provider
+        : {
+            name: provider.name,
+            url: provider.url,
+            arbitrumUrl: provider.arbitrumUrl || null,
+            callsPerSecond: provider.callsPerSecond,
+            callsPerDay: provider.callsPerDay ?? null,
+            priority: provider.priority,
+          };
 
       try {
-        submitBtn.disabled = true;
-        statusEl.textContent = 'Adding provider...';
+        addBtn.disabled = true;
+        statusEl.textContent = editingProviderId === null
+          ? 'Re-checking URLs and adding provider…'
+          : 'Re-checking URLs and saving provider…';
         statusEl.style.color = 'var(--text-dim)';
 
-        const response = await fetch(`${API_BASE}/admin/rpc-providers`, {
-          method: 'POST',
+        const response = await fetch(
+          editingProviderId === null
+            ? `${API_BASE}/admin/rpc-providers`
+            : `${API_BASE}/admin/rpc-providers/${editingProviderId}`,
+          {
+          method: editingProviderId === null ? 'POST' : 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify(provider),
+          body: JSON.stringify(requestBody),
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to add provider');
+          if (data.probe) {
+            rpcWizardProbe = data.probe;
+            rpcWizardProbeUrls = getWizardUrls();
+            renderWizardProbe(data.probe);
+          }
+          throw new Error(data.error || 'Failed to save provider');
         }
 
-        statusEl.textContent = 'Provider added successfully!';
+        const successMessage = editingProviderId === null
+          ? 'Provider added successfully!'
+          : 'Provider updated and re-tested successfully!';
+        resetRPCWizard();
+        statusEl.textContent = successMessage;
         statusEl.style.color = 'var(--primary)';
-
-        // Reset form
-        event.target.reset();
-        document.getElementById('providerCallsPerSec').value = '10';
-        document.getElementById('providerPriority').value = '0';
-        document.getElementById('providerSupportsLargeScans').checked = false;
-        document.getElementById('providerSupportsENS').checked = true;
 
         // Reload providers table
         await loadProviders();
 
         setTimeout(() => {
-          statusEl.textContent = '';
+          if (statusEl.textContent === successMessage) {
+            statusEl.textContent = '';
+          }
         }, 3000);
       } catch (error) {
         statusEl.textContent = `Error: ${error.message}`;
         statusEl.style.color = 'var(--danger)';
       } finally {
-        submitBtn.disabled = false;
+        addBtn.disabled = false;
       }
     }
 
     async function saveProviderTuning(providerId) {
-      const arbitrumUrlRaw = document.getElementById(`arburl-${providerId}`).value.trim();
       const callsPerSecondRaw = document.getElementById(`cps-${providerId}`).value;
       const callsPerDayRaw = document.getElementById(`cpd-${providerId}`).value.trim();
       const priorityRaw = document.getElementById(`priority-${providerId}`).value;
 
       const callsPerSecond = parseFloat(callsPerSecondRaw);
-      const priority = parseInt(priorityRaw, 10);
+      const priority = Number(priorityRaw);
 
       if (!Number.isFinite(callsPerSecond) || callsPerSecond <= 0 || callsPerSecond > 1000) {
         alert('Calls/Second must be between 0.1 and 1000');
         return;
       }
 
-      if (!Number.isFinite(priority)) {
-        alert('Priority must be a valid number');
+      if (!Number.isInteger(priority)) {
+        alert('Priority must be an integer');
         return;
       }
 
       let callsPerDay;
       if (callsPerDayRaw.length > 0) {
-        callsPerDay = parseInt(callsPerDayRaw, 10);
-        if (!Number.isFinite(callsPerDay) || callsPerDay < 1) {
+        callsPerDay = Number(callsPerDayRaw);
+        if (!Number.isInteger(callsPerDay) || callsPerDay < 1) {
           alert('Calls/Day must be empty (unlimited) or at least 1');
           return;
         }
       }
 
       try {
+        const updates = {
+          callsPerSecond,
+          callsPerDay: callsPerDay ?? null,
+          priority,
+        };
+
         const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({
-            arbitrumUrl: arbitrumUrlRaw.length > 0 ? arbitrumUrlRaw : null,
-            callsPerSecond,
-            callsPerDay,
-            priority,
-          }),
+          body: JSON.stringify(updates),
         });
 
         const data = await response.json();
@@ -974,61 +1262,88 @@
       }
     }
 
-    function showRpcProviderStatus(message, type = 'success') {
+    function showRpcProviderStatus(message, type = 'info') {
       const statusEl = document.getElementById('rpcProviderStatus');
       statusEl.textContent = message;
       statusEl.className = `status-message ${type}`;
       statusEl.style.display = 'block';
     }
 
-    async function toggleCapability(providerId, capability, value, checkboxEl) {
-      if (
-        capability === 'supportsLargeBlockScans' &&
-        value &&
-        !confirm(
-          'Enable this provider for live historical block scans?\n\n' +
-          'This does not test support. The next wallet scan may send many eth_getLogs requests to this endpoint.'
-        )
-      ) {
-        if (checkboxEl) checkboxEl.checked = false;
-        return;
-      }
-
+    async function probeExistingProvider(providerId, button) {
+      const originalText = button?.textContent;
       try {
-        showRpcProviderStatus('Updating provider capability and reloading RPC routing…');
-        const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+        if (button) {
+          button.disabled = true;
+          button.textContent = 'Testing…';
+        }
+        showRpcProviderStatus('Testing connectivity and historical block scans…');
+        const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}/probe`, {
+          method: 'POST',
           credentials: 'include',
-          body: JSON.stringify({ [capability]: value }),
         });
-
         const data = await response.json();
-
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to update capability');
+          throw new Error(data.error || 'Failed to test provider');
         }
 
         await loadProviders();
-        const capabilityName = capability === 'supportsLargeBlockScans'
-          ? 'Historical scan routing'
-          : 'ENS resolution';
-        const extra = capability === 'supportsLargeBlockScans' && value
-          ? ' This enabled live routing; it did not test the endpoint.'
-          : '';
+        const passedChains = [data.probe.ethereum, data.probe.arbitrum]
+          .filter(Boolean)
+          .filter((probe) => probe.basic.ok && probe.blockScan.compatible)
+          .map((probe) => probe.chainName);
         showRpcProviderStatus(
-          `${capabilityName} ${value ? 'enabled' : 'disabled'} and RPC routing reloaded.${extra}`,
-          'success'
+          passedChains.length > 0
+            ? `Provider test finished. Historical scans verified for ${passedChains.join(' and ')}.`
+            : 'Provider test finished, but no endpoint qualified for historical scans. See the capability results.',
+          passedChains.length > 0 ? 'success' : 'error'
         );
       } catch (error) {
-        showRpcProviderStatus(`Failed to update capability: ${error.message}`, 'error');
-        // Reload to revert the checkbox
-        await loadProviders();
+        showRpcProviderStatus(`Provider test failed: ${error.message}`, 'error');
+      } finally {
+        if (button?.isConnected) {
+          button.disabled = false;
+          button.textContent = originalText || 'Retest saved';
+        }
       }
     }
 
-    async function deleteProvider(providerId, name) {
-      if (!confirm(`Are you sure you want to delete the RPC provider "${name}"?\n\nThis will remove the provider from the database and reload the RPC manager.`)) {
+    async function probeStaleProviders(providers) {
+      const staleProviders = providers.filter((provider) => {
+        if (!provider.isActive) return false;
+        const needsEthereumProbe = probeIsStale(provider.ethereumProbe);
+        const needsArbitrumProbe = provider.arbitrumUrl && probeIsStale(provider.arbitrumProbe);
+        const lastAttempt = automaticProbeAttempts.get(provider.id) || 0;
+        return (needsEthereumProbe || needsArbitrumProbe) && Date.now() - lastAttempt > RPC_PROBE_MAX_AGE_MS;
+      });
+
+      if (staleProviders.length === 0) return;
+      let completed = 0;
+      for (const provider of staleProviders) {
+        automaticProbeAttempts.set(provider.id, Date.now());
+        try {
+          showRpcProviderStatus(`Automatically verifying RPC capabilities (${completed + 1}/${staleProviders.length})…`);
+          const response = await fetch(`${API_BASE}/admin/rpc-providers/${provider.id}/probe`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Capability check failed');
+          }
+          completed += 1;
+        } catch (error) {
+          showRpcProviderStatus(`Automatic provider check failed: ${error.message}. Use Retest saved to retry.`, 'error');
+        }
+      }
+
+      if (completed > 0) {
+        await loadProviders();
+        showRpcProviderStatus(`Refreshed capability results for ${completed} RPC provider${completed === 1 ? '' : 's'}.`, 'success');
+      }
+    }
+
+    async function deleteProvider(providerId) {
+      if (!confirm('Are you sure you want to delete this RPC provider?\n\nThis will remove it from the database and reload RPC routing.')) {
         return;
       }
 
@@ -1044,7 +1359,7 @@
           throw new Error(data.error || 'Failed to delete provider');
         }
 
-        alert(`Successfully deleted provider "${name}"`);
+        alert('Successfully deleted the RPC provider.');
         await loadProviders();
       } catch (error) {
         alert(`Failed to delete provider: ${error.message}`);

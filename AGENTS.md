@@ -102,7 +102,9 @@ Positions have three semantic categories, derived at the service layer from the 
 - Managed JSON-RPC providers deliberately disable ethers batching and pin their configured network. This avoids id-less throttle responses becoming mixed-batch `BAD_DATA` errors and avoids redundant `eth_chainId` calls.
 - Configure at least two independent scan-capable providers for resilient discovery. Multiple URLs sharing one vendor project/quota are not true quota failover.
 - If no scan-capable provider is available, skip that protocol gracefully and log a warning.
-- `supports_large_block_scans` comes from migration `1733000030000_add-rpc-supports-large-block-scans.js`.
+- `supports_large_block_scans` is the legacy aggregate from migration `1733000030000_add-rpc-supports-large-block-scans.js`. Database providers use probe-derived per-chain flags and sanitized probe results from `1733000057000_add-rpc-provider-probe-results.js`; do not add UI controls that set scan flags manually.
+- The admin wizard and **Retest saved** action actively verify `eth_chainId`, `eth_blockNumber`, and historical `eth_getLogs`. Never return or log the tested RPC URLs or API keys in probe results.
+- RPCManager health is passive live-traffic telemetry. Do not present it as proof that connectivity or historical scan capability was actively tested.
 
 ## Adapter and Plugin Guidance
 - Implement `IProtocolAdapter`/`BaseProtocolAdapter` in `src/sdk/adapter.ts`.

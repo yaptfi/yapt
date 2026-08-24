@@ -149,4 +149,31 @@ describe('RPCManager scan routing', () => {
 
     expect(manager.getStatus()[0]?.availableTokens).toBeCloseTo(1);
   });
+
+  it('only marks an unhealthy provider recovered after a successful post-backoff call', async () => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const providerSend = jest.fn().mockRejectedValue(new Error('temporarily unavailable'));
+    mockSendByUrl.set('https://recovering.example', providerSend);
+    const manager = new RPCManager([
+      createConfig('Recovering', 'https://recovering.example', 10, true),
+    ]);
+
+    await expect(manager.send('eth_blockNumber', [])).rejects.toThrow('temporarily unavailable');
+    await expect(manager.send('eth_blockNumber', [])).rejects.toThrow('temporarily unavailable');
+    await expect(manager.send('eth_blockNumber', [])).rejects.toThrow('temporarily unavailable');
+
+    expect(manager.getStatus()[0]).toMatchObject({ isHealthy: false, consecutiveErrors: 3 });
+    await expect(manager.send('eth_blockNumber', [])).rejects.toThrow('exhausted or rate limited');
+    expect(providerSend).toHaveBeenCalledTimes(3);
+
+    now += 60_001;
+    providerSend.mockResolvedValueOnce('0x1');
+    await expect(manager.send('eth_blockNumber', [])).resolves.toBe('0x1');
+
+    expect(manager.getStatus()[0]).toMatchObject({ isHealthy: true, consecutiveErrors: 0 });
+    expect(console.log).toHaveBeenCalledWith(
+      '[RPCManager] Provider "Recovering" recovered and marked healthy'
+    );
+  });
 });

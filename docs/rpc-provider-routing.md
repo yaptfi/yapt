@@ -27,7 +27,8 @@ managed chain this is a stable scan-only view of the same `RPCManager`, not a
 direct underlying `JsonRpcProvider`.
 
 Every call made through that view—including `getBlockNumber`, fixed-block
-contract reads, and `eth_getLogs`—uses only providers with
+contract reads, and `eth_getLogs`—uses only providers whose probe-derived scan
+flag is enabled for that chain. At runtime this is exposed to the manager as
 `supportsLargeBlockScans=true`. It retains the normal queue, rate limiting,
 health tracking, and failover behavior.
 
@@ -48,19 +49,52 @@ These settings are intentional. Preserve them when changing provider creation.
 
 ## Capability semantics
 
-The database field is `supports_large_block_scans`; TypeScript and API responses
-use `supportsLargeBlockScans`.
+Database-managed providers store independent
+`supports_ethereum_block_scans` and `supports_arbitrum_block_scans` fields.
+`supports_large_block_scans` remains as a legacy aggregate. The model maps the
+correct per-chain value to `supportsLargeBlockScans` when it builds each chain's
+RPC manager.
 
-Set it to `true` when an endpoint can reliably serve historical `eth_getLogs`.
-It does not mean the endpoint accepts unlimited ranges. A provider limited to
-10,000 blocks can remain enabled because the Uniswap v4 scanner adapts its range.
+Do not set database scan flags manually. The admin capability probe sets them
+after it verifies the endpoint. A provider limited to 10,000 blocks remains
+eligible because both the probe and the Uniswap v4 scanner adapt to its range.
 
-Set it to `false` when an endpoint cannot serve the required historical logs.
-It will remain available for normal contract reads but will not receive scan
-traffic.
+An endpoint that passes ordinary chain reads but cannot serve a useful
+historical-log range remains available for normal contract reads but does not
+receive scan traffic. A throttle, timeout, or network failure is inconclusive:
+the last conclusive routing flag is retained and the UI asks the administrator
+to retry.
 
-The column is added by
-`migrations/1733000030000_add-rpc-supports-large-block-scans.js`.
+Per-chain flags and sanitized probe results are added by
+`migrations/1733000057000_add-rpc-provider-probe-results.js`.
+
+## Capability and health checks
+
+The admin page shows two different signals:
+
+- **Runtime state** is passive RPCManager telemetry. A provider starts without
+  error history, becomes degraded after repeated live-call failures, and
+  recovers after backoff plus a successful request. This is not a connectivity
+  test.
+- **Verified capabilities** are active, direct JSON-RPC probes. Each configured
+  chain checks `eth_chainId`, `eth_blockNumber`, and a real historical
+  `eth_getLogs` query against the configured Uniswap v4 Position Manager.
+
+The historical probe starts at 50,000 blocks. If the endpoint reports a range
+limit, the probe retries at that limit; otherwise it halves recognized
+range-rejection failures. Ranges of at least 10,000 blocks are considered useful.
+Probe records include the check time, latency, sanitized status, and detected
+range, but never the endpoint URL or API key.
+
+The admin page automatically refreshes missing or older-than-six-hours probes
+while it is open. **Retest saved** performs the same check immediately. These checks
+run directly against the provider being tested, so load balancing cannot hide a
+broken or misconfigured endpoint.
+
+For an existing provider, **Edit & test** opens the same wizard with the saved
+name, complete URLs, API-key portions, and limits prefilled. The endpoints remain
+editable. A fresh capability check is required before **Save Verified Provider**
+appears, and saving re-runs the checks server-side before changing the row.
 
 ## Uniswap v4 inventory scan
 
@@ -92,22 +126,26 @@ cached briefly so sibling adapters do not immediately repeat the same failure.
 Each provider row contains a required Ethereum URL and an optional Arbitrum URL.
 A row participates in Arbitrum routing only when its Arbitrum URL is present.
 
-For a historical-log provider:
+Use the **Add RPC Provider Wizard**:
 
-- keep it active;
-- supply the URL for every chain it should serve;
-- enable **Historical Block Scans**;
-- set `callsPerSecond` conservatively and below the vendor quota;
-- set `callsPerDay` when the plan has a known daily allowance.
+1. Enter a provider name and its Ethereum URL. Put the API key in the URL in the
+   format supplied by the vendor.
+2. Optionally enter the matching Arbitrum URL. An Ethereum endpoint cannot serve
+   Arbitrum unless that separate URL is present.
+3. Set conservative local rate and daily limits.
+4. Select **Test URLs & Detect Capabilities**. Read the per-chain connectivity
+   and historical-log results.
+5. If a check fails or is throttled, edit the URL and retry. **Add Verified
+   Provider** appears only after every configured endpoint has a conclusive
+   result.
 
-The **Use for Historical Scans** checkbox is an opt-in routing control, not a
-provider capability test. Enabling it immediately makes the endpoint eligible
-for live `eth_getLogs` requests after the RPC managers reload. New providers
-default to unchecked in the admin UI; enable it only after confirming the plan
-supports historical logs and setting conservative rate limits.
+Saving re-runs the checks server-side, then enables historical routing only on
+the chains that passed. A provider with conclusively unsupported historical
+logs can still be saved for ordinary reads.
 
 Creating or editing providers through the admin API reloads the in-process
-provider managers automatically.
+provider managers automatically. Editing an existing Arbitrum URL also probes
+the changed endpoint before saving it.
 
 The admin provider table reports the active historical-scan route count for each
 chain. A count of `1` means scans can run but cannot fail over; a count of `2` or
@@ -140,8 +178,8 @@ environment configuration.
   unknown, then tune from observed provider status and vendor limits.
 - Keep range-limited endpoints scan-enabled if they reliably serve historical
   logs; the inventory scanner adapts the range.
-- A second provider helps only after it is active for the chain and marked
-  scan-capable.
+- A second provider helps only after it is active for the chain and its
+  historical scan probe has passed.
 
 No retry strategy can overcome an exhausted daily/project quota when every
 eligible provider shares that quota. Add an independent backup or increase the
@@ -160,9 +198,10 @@ once for that inventory scan and must not include an RPC URL or credentials.
 2. Lower `callsPerSecond` for the throttled endpoint.
 3. Check its daily/project credit usage.
 4. Confirm at least one independent backup has an Arbitrum URL (when relevant),
-   is active, and has **Use for Historical Scans** enabled.
-5. Inspect provider health in the admin UI, then rescan after configuration is
-   reloaded.
+   is active, and shows **Scan routing: enabled** after a recent capability test.
+5. Use **Retest saved** or **Edit & test** in the admin UI. This distinguishes a bad key/wrong chain,
+   transient throttle, and unsupported historical range before another wallet
+   re-scan is attempted.
 
 ### Re-scan appears stuck at `Starting discovery`
 
@@ -181,8 +220,9 @@ The recursive retry classifier still handles this legacy/provider error shape.
 
 ### `No scan-capable RPC provider available`
 
-At least one active chain provider must have Historical Block Scans enabled. A
-normal-only provider cannot be used as a silent fallback for historical scans.
+At least one active provider for that chain must have passed the historical-log
+probe. A normal-only provider cannot be used as a silent fallback for
+historical scans.
 
 ### Inventory history mismatch
 
@@ -202,5 +242,9 @@ Relevant deterministic tests are:
   failover, batching options, static networks, quota accounting, and low rates;
 - `tests/utils/rpc-proxy-provider.test.ts`—stable scan-only provider routing;
 - `tests/utils/ethereum.test.ts`—chain initialization and capability selection.
+- `tests/services/rpc-provider-probe.test.ts`—chain validation, full and
+  range-limited historical scans, throttling, and unusably small ranges;
+- `tests/routes/admin.rpc-providers.contract.test.ts`—wizard, re-probe, and
+  probe-derived routing contracts.
 
 Run `npm run typecheck`, `npm run lint`, and `npm test` after routing changes.

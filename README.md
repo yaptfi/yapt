@@ -205,7 +205,8 @@ Yapt uses capability-based routing to handle RPC provider limitations:
 
 - **Chain-aware routing**: Providers are selected by chain capability (Ethereum and/or Arbitrum)
 - **Normal calls** (balances, state): Load-balanced across healthy providers for that chain
-- **Historical scans** (Uniswap discovery): Only providers with `supportsLargeBlockScans=true`
+- **Historical scans** (Uniswap discovery): Only providers verified for the
+  relevant chain's historical `eth_getLogs` workload
 
 **Single Provider** (simplest):
 ```env
@@ -217,12 +218,16 @@ ETH_RPC_SUPPORTS_LARGE_BLOCK_SCANS=true
 
 **Multiple Providers** (optimal):
 - Add via admin panel at `/admin.html`
-- Set chain capabilities plus provider features (Large Block Scans, ENS)
-- Configure Alchemy (fast, no scans) + Infura (slower, supports scans)
+- Use the add-provider wizard to test the Ethereum and optional Arbitrum URLs
+- The app verifies chain connectivity and historical block scans, adapts to
+  reported range limits, and enables scan routing per chain automatically
+- Failed URLs stay editable so a key or endpoint can be corrected and re-tested
 - Environment fallback also supports comma-separated capability flags via `*_RPC_SCAN_CAPABILITIES` and `*_RPC_ENS_CAPABILITIES`
-- See `CLAUDE.md` for detailed configuration
+- See `docs/rpc-provider-routing.md` for detailed configuration
 
-**Common Issue**: Alchemy free tier restricts `eth_getLogs` to 10 blocks. Set `supportsLargeBlockScans=false` for Alchemy free tier, or Uniswap discovery will fail.
+The admin table distinguishes passive runtime health from a timestamped active
+capability test. Providers that only support very small log ranges remain
+available for ordinary reads but are excluded from historical discovery.
 
 ### Production Deployment
 

@@ -5,9 +5,12 @@ import {
   getAllRPCProviders,
   createRPCProvider,
   deleteRPCProvider,
+  getRPCProviderById,
   updateRPCProvider,
+  updateRPCProviderProbeResults,
 } from '../models/rpc-provider';
 import { reloadRPCProviders, getRPCStatus } from '../utils/ethereum';
+import { probeRPCProviderUrls } from '../services/rpc-provider-probe';
 
 interface WalletWithUsers {
   id: string;
@@ -17,6 +20,22 @@ interface WalletWithUsers {
   userCount: number;
   positionCount: number;
   snapshotCount: number;
+}
+
+function isHttpUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function parseRPCProviderId(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 export default async function adminRoutes(server: FastifyInstance) {
@@ -144,8 +163,39 @@ export default async function adminRoutes(server: FastifyInstance) {
   });
 
   /**
+   * POST /api/admin/rpc-providers/probe
+   * Probe editable URLs before creating a provider. Results never include URLs.
+   */
+  server.post<{
+    Body: { url: string; arbitrumUrl?: string | null };
+  }>('/rpc-providers/probe', { preHandler: requireAdmin }, async (request, reply) => {
+    const { url, arbitrumUrl } = request.body;
+    if (!url) {
+      return reply.code(400).send({ error: 'Ethereum RPC URL is required' });
+    }
+
+    try {
+      const probe = await probeRPCProviderUrls(url, arbitrumUrl);
+      server.log.info(
+        {
+          userId: request.user?.id,
+          ethereumBasic: probe.ethereum.basic.ok,
+          ethereumBlockScan: probe.ethereum.blockScan.status,
+          arbitrumBasic: probe.arbitrum?.basic.ok,
+          arbitrumBlockScan: probe.arbitrum?.blockScan.status,
+        },
+        'RPC provider wizard probe completed'
+      );
+      return reply.send({ probe });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to probe RPC URLs';
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  /**
    * POST /api/admin/rpc-providers
-   * Create a new RPC provider
+   * Create a new RPC provider after independently re-checking its URLs.
    */
   server.post<{
     Body: {
@@ -156,8 +206,6 @@ export default async function adminRoutes(server: FastifyInstance) {
       callsPerDay?: number;
       priority: number;
       isActive: boolean;
-      supportsLargeBlockScans?: boolean;
-      supportsENS?: boolean;
     };
   }>('/rpc-providers', { preHandler: requireAdmin }, async (request, reply) => {
     const {
@@ -168,42 +216,71 @@ export default async function adminRoutes(server: FastifyInstance) {
       callsPerDay,
       priority,
       isActive,
-      supportsLargeBlockScans,
-      supportsENS,
     } = request.body;
 
     // Validate inputs
-    if (!name || !url || callsPerSecond === undefined || priority === undefined) {
+    if (
+      typeof name !== 'string' ||
+      name.trim().length === 0 ||
+      typeof url !== 'string' ||
+      url.trim().length === 0 ||
+      callsPerSecond === undefined ||
+      priority === undefined
+    ) {
       return reply.code(400).send({ error: 'Missing required fields: name, url, callsPerSecond, priority' });
     }
 
-    if (callsPerSecond <= 0 || callsPerSecond > 1000) {
+    if (!Number.isFinite(callsPerSecond) || callsPerSecond <= 0 || callsPerSecond > 1000) {
       return reply.code(400).send({ error: 'callsPerSecond must be between 0 and 1000' });
     }
 
-    if (callsPerDay !== undefined && callsPerDay !== null && (!Number.isFinite(callsPerDay) || callsPerDay < 1)) {
+    if (!Number.isInteger(priority)) {
+      return reply.code(400).send({ error: 'priority must be an integer' });
+    }
+
+    if (
+      callsPerDay !== undefined &&
+      callsPerDay !== null &&
+      (!Number.isInteger(callsPerDay) || callsPerDay < 1)
+    ) {
       return reply.code(400).send({ error: 'callsPerDay must be at least 1 when provided' });
     }
 
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return reply.code(400).send({ error: 'url must start with http:// or https://' });
+    if (!isHttpUrl(url)) {
+      return reply.code(400).send({ error: 'url must be a valid HTTP or HTTPS URL' });
     }
 
-    if (arbitrumUrl && !arbitrumUrl.startsWith('http://') && !arbitrumUrl.startsWith('https://')) {
-      return reply.code(400).send({ error: 'arbitrumUrl must start with http:// or https://' });
+    if (arbitrumUrl && !isHttpUrl(arbitrumUrl)) {
+      return reply.code(400).send({ error: 'arbitrumUrl must be a valid HTTP or HTTPS URL' });
     }
 
     try {
+      const normalizedUrl = url.trim();
+      const normalizedArbitrumUrl = arbitrumUrl?.trim() || undefined;
+      const probe = await probeRPCProviderUrls(normalizedUrl, normalizedArbitrumUrl);
+      if (!probe.canSave) {
+        return reply.code(422).send({
+          error: 'RPC capability checks were inconclusive or failed. Edit the URL and retry.',
+          probe,
+        });
+      }
+
+      const supportsEthereumBlockScans = probe.ethereum.blockScan.compatible;
+      const supportsArbitrumBlockScans = probe.arbitrum?.blockScan.compatible ?? false;
       const provider = await createRPCProvider({
-        name,
-        url,
-        arbitrumUrl,
+        name: name.trim(),
+        url: normalizedUrl,
+        arbitrumUrl: normalizedArbitrumUrl,
         callsPerSecond,
         callsPerDay,
         priority,
         isActive: isActive !== false, // Default to true
-        supportsLargeBlockScans,
-        supportsENS,
+        supportsLargeBlockScans: supportsEthereumBlockScans || supportsArbitrumBlockScans,
+        supportsEthereumBlockScans,
+        supportsArbitrumBlockScans,
+        supportsENS: probe.ethereum.basic.ok,
+        ethereumProbe: probe.ethereum,
+        arbitrumProbe: probe.arbitrum,
       });
 
       // Reload providers to apply changes
@@ -211,7 +288,7 @@ export default async function adminRoutes(server: FastifyInstance) {
 
       server.log.info({ providerId: provider.id, name: provider.name }, 'RPC provider created');
 
-      return reply.code(201).send({ provider });
+      return reply.code(201).send({ provider, probe });
     } catch (error) {
       server.log.error(error);
       return reply.code(500).send({ error: 'Failed to create RPC provider' });
@@ -229,7 +306,7 @@ export default async function adminRoutes(server: FastifyInstance) {
       url?: string;
       arbitrumUrl?: string | null;
       callsPerSecond?: number;
-      callsPerDay?: number;
+      callsPerDay?: number | null;
       priority?: number;
       isActive?: boolean;
       supportsLargeBlockScans?: boolean;
@@ -240,43 +317,98 @@ export default async function adminRoutes(server: FastifyInstance) {
     const updates = request.body;
 
     // Validate numeric ID
-    const providerId = parseInt(id);
-    if (isNaN(providerId)) {
+    const providerId = parseRPCProviderId(id);
+    if (providerId === null) {
       return reply.code(400).send({ error: 'Invalid provider ID' });
     }
 
     // Validate updates if provided
-    if (updates.callsPerSecond !== undefined && (updates.callsPerSecond <= 0 || updates.callsPerSecond > 1000)) {
+    if (updates.name !== undefined && (typeof updates.name !== 'string' || updates.name.trim().length === 0)) {
+      return reply.code(400).send({ error: 'name must not be empty' });
+    }
+    if (
+      updates.callsPerSecond !== undefined &&
+      (!Number.isFinite(updates.callsPerSecond) || updates.callsPerSecond <= 0 || updates.callsPerSecond > 1000)
+    ) {
       return reply.code(400).send({ error: 'callsPerSecond must be between 0 and 1000' });
+    }
+
+    if (updates.priority !== undefined && !Number.isInteger(updates.priority)) {
+      return reply.code(400).send({ error: 'priority must be an integer' });
     }
 
     if (
       updates.callsPerDay !== undefined &&
       updates.callsPerDay !== null &&
-      (!Number.isFinite(updates.callsPerDay) || updates.callsPerDay < 1)
+      (!Number.isInteger(updates.callsPerDay) || updates.callsPerDay < 1)
     ) {
       return reply.code(400).send({ error: 'callsPerDay must be at least 1 when provided' });
     }
 
-    if (updates.url && !updates.url.startsWith('http://') && !updates.url.startsWith('https://')) {
-      return reply.code(400).send({ error: 'url must start with http:// or https://' });
+    if (updates.url !== undefined && !isHttpUrl(updates.url)) {
+      return reply.code(400).send({ error: 'url must be a valid HTTP or HTTPS URL' });
     }
 
     if (
       updates.arbitrumUrl !== undefined &&
       updates.arbitrumUrl !== null &&
       updates.arbitrumUrl !== '' &&
-      !updates.arbitrumUrl.startsWith('http://') &&
-      !updates.arbitrumUrl.startsWith('https://')
+      !isHttpUrl(updates.arbitrumUrl)
     ) {
-      return reply.code(400).send({ error: 'arbitrumUrl must start with http:// or https://' });
+      return reply.code(400).send({ error: 'arbitrumUrl must be a valid HTTP or HTTPS URL' });
+    }
+
+    if (updates.supportsLargeBlockScans !== undefined) {
+      return reply.code(400).send({
+        error: 'Historical scan capability is detected automatically. Use the provider test action.',
+      });
     }
 
     try {
+      if (updates.name !== undefined) {
+        updates.name = updates.name.trim();
+      }
+      if (updates.url !== undefined) {
+        updates.url = updates.url.trim();
+      }
+      if (typeof updates.arbitrumUrl === 'string') {
+        updates.arbitrumUrl = updates.arbitrumUrl.trim();
+      }
       if (updates.arbitrumUrl === '') {
         updates.arbitrumUrl = null;
       }
-      const provider = await updateRPCProvider(providerId, updates);
+      let urlProbe = null;
+      if (updates.url !== undefined || updates.arbitrumUrl !== undefined) {
+        const existing = await getRPCProviderById(providerId);
+        if (!existing) {
+          return reply.code(404).send({ error: 'RPC provider not found' });
+        }
+        urlProbe = await probeRPCProviderUrls(
+          updates.url ?? existing.url,
+          updates.arbitrumUrl === undefined ? existing.arbitrumUrl : updates.arbitrumUrl
+        );
+        if (!urlProbe.canSave) {
+          return reply.code(422).send({
+            error: 'Updated RPC URLs did not pass capability checks. Edit the URL and retry.',
+            probe: urlProbe,
+          });
+        }
+      }
+
+      const providerUpdates = urlProbe
+        ? {
+            ...updates,
+            supportsLargeBlockScans:
+              urlProbe.ethereum.blockScan.compatible ||
+              (urlProbe.arbitrum?.blockScan.compatible ?? false),
+            supportsEthereumBlockScans: urlProbe.ethereum.blockScan.compatible,
+            supportsArbitrumBlockScans: urlProbe.arbitrum?.blockScan.compatible ?? false,
+            supportsENS: urlProbe.ethereum.basic.ok,
+            ethereumProbe: urlProbe.ethereum,
+            arbitrumProbe: urlProbe.arbitrum,
+          }
+        : updates;
+      const provider = await updateRPCProvider(providerId, providerUpdates);
 
       if (!provider) {
         return reply.code(404).send({ error: 'RPC provider not found' });
@@ -289,14 +421,14 @@ export default async function adminRoutes(server: FastifyInstance) {
         {
           providerId: provider.id,
           name: provider.name,
-          changedFields: Object.keys(updates),
-          scanRoutingEnabled: updates.supportsLargeBlockScans,
+          changedFields: Object.keys(providerUpdates),
+          scanRoutingEnabled: providerUpdates.supportsLargeBlockScans,
           isActive: updates.isActive,
         },
         'RPC provider updated and routing reloaded'
       );
 
-      return reply.send({ provider });
+      return reply.send({ provider, probe: urlProbe });
     } catch (error) {
       server.log.error(error);
       return reply.code(500).send({ error: 'Failed to update RPC provider' });
@@ -314,8 +446,8 @@ export default async function adminRoutes(server: FastifyInstance) {
       const { id } = request.params;
 
       // Validate numeric ID
-      const providerId = parseInt(id);
-      if (isNaN(providerId)) {
+      const providerId = parseRPCProviderId(id);
+      if (providerId === null) {
         return reply.code(400).send({ error: 'Invalid provider ID' });
       }
 
@@ -335,6 +467,64 @@ export default async function adminRoutes(server: FastifyInstance) {
       } catch (error) {
         server.log.error(error);
         return reply.code(500).send({ error: 'Failed to delete RPC provider' });
+      }
+    }
+  );
+
+  /**
+   * POST /api/admin/rpc-providers/:id/probe
+   * Re-check and persist per-chain capabilities for an existing provider.
+   */
+  server.post<{ Params: { id: string } }>(
+    '/rpc-providers/:id/probe',
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      const providerId = parseRPCProviderId(request.params.id);
+      if (providerId === null) {
+        return reply.code(400).send({ error: 'Invalid provider ID' });
+      }
+
+      const existing = await getRPCProviderById(providerId);
+      if (!existing) {
+        return reply.code(404).send({ error: 'RPC provider not found' });
+      }
+
+      try {
+        const probe = await probeRPCProviderUrls(existing.url, existing.arbitrumUrl);
+        const previousEthereumScan = existing.supportsEthereumBlockScans === true;
+        const previousArbitrumScan = existing.supportsArbitrumBlockScans === true;
+        const provider = await updateRPCProviderProbeResults(providerId, probe);
+        if (!provider) {
+          return reply.code(404).send({ error: 'RPC provider not found' });
+        }
+
+        const routingChanged =
+          previousEthereumScan !== provider.supportsEthereumBlockScans ||
+          previousArbitrumScan !== provider.supportsArbitrumBlockScans;
+        if (routingChanged) {
+          await reloadRPCProviders();
+        }
+
+        server.log.info(
+          {
+            providerId,
+            name: existing.name,
+            ethereumBasic: probe.ethereum.basic.ok,
+            ethereumBlockScan: probe.ethereum.blockScan.status,
+            arbitrumBasic: probe.arbitrum?.basic.ok,
+            arbitrumBlockScan: probe.arbitrum?.blockScan.status,
+            routingChanged,
+          },
+          'RPC provider capability probe completed'
+        );
+
+        return reply.send({ provider, probe, routingChanged });
+      } catch (error) {
+        server.log.error(
+          { err: error, providerId, name: existing.name },
+          'RPC provider capability probe failed unexpectedly'
+        );
+        return reply.code(500).send({ error: 'Failed to probe RPC provider' });
       }
     }
   );

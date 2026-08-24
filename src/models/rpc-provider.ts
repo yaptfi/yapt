@@ -1,5 +1,6 @@
 import { query, queryOne } from '../utils/db';
 import { RPCProviderConfig } from '../utils/rpc-manager';
+import { RPCChainProbeResult, RPCProviderProbeResult } from '../types/rpc-provider';
 
 /**
  * Database row type (snake_case)
@@ -16,14 +17,19 @@ interface RPCProviderRow {
   supports_ethereum: boolean;
   supports_arbitrum: boolean;
   supports_large_block_scans: boolean;
+  supports_ethereum_block_scans: boolean;
+  supports_arbitrum_block_scans: boolean;
   supports_ens: boolean;
+  ethereum_probe: RPCChainProbeResult | null;
+  arbitrum_probe: RPCChainProbeResult | null;
   created_at: Date;
   updated_at: Date;
 }
 
 type RPCProviderUpdates =
-  Partial<Omit<RPCProviderConfig, 'id' | 'arbitrumUrl'>> & {
+  Partial<Omit<RPCProviderConfig, 'id' | 'arbitrumUrl' | 'callsPerDay'>> & {
     arbitrumUrl?: string | null;
+    callsPerDay?: number | null;
   };
 
 function hasArbitrumUrl(row: RPCProviderRow): boolean {
@@ -45,6 +51,14 @@ function rowToConfig(row: RPCProviderRow, chainId?: number): RPCProviderConfig {
   const arbitrumUrl = normalizeOptionalUrl(row.arbitrum_url);
   const effectiveUrl = chainId === 42161 && arbitrumUrl ? arbitrumUrl : row.url;
 
+  const supportsEthereumBlockScans = row.supports_ethereum_block_scans;
+  const supportsArbitrumBlockScans = row.supports_arbitrum_block_scans;
+  const supportsLargeBlockScans = chainId === 42161
+    ? supportsArbitrumBlockScans
+    : chainId === 1
+      ? supportsEthereumBlockScans
+      : supportsEthereumBlockScans || supportsArbitrumBlockScans;
+
   return {
     id: row.id,
     name: row.name,
@@ -56,8 +70,12 @@ function rowToConfig(row: RPCProviderRow, chainId?: number): RPCProviderConfig {
     isActive: row.is_active,
     supportsEthereum: true,
     supportsArbitrum: hasArbitrumUrl(row),
-    supportsLargeBlockScans: row.supports_large_block_scans,
+    supportsLargeBlockScans,
+    supportsEthereumBlockScans,
+    supportsArbitrumBlockScans,
     supportsENS: row.supports_ens,
+    ethereumProbe: row.ethereum_probe,
+    arbitrumProbe: row.arbitrum_probe,
   };
 }
 
@@ -73,7 +91,11 @@ const PROVIDER_SELECT = `SELECT
   supports_ethereum,
   supports_arbitrum,
   supports_large_block_scans,
+  supports_ethereum_block_scans,
+  supports_arbitrum_block_scans,
   supports_ens,
+  ethereum_probe,
+  arbitrum_probe,
   created_at,
   updated_at
  FROM rpc_provider`;
@@ -136,6 +158,14 @@ export async function createRPCProvider(
   config: Omit<RPCProviderConfig, 'id'>
 ): Promise<RPCProviderConfig> {
   const normalizedArbitrumUrl = normalizeOptionalUrl(config.arbitrumUrl);
+  const supportsEthereumBlockScans = config.supportsEthereumBlockScans
+    ?? config.supportsLargeBlockScans
+    ?? false;
+  const supportsArbitrumBlockScans = normalizedArbitrumUrl !== null && (
+    config.supportsArbitrumBlockScans
+      ?? config.supportsLargeBlockScans
+      ?? false
+  );
 
   const row = await queryOne<RPCProviderRow>(
     `INSERT INTO rpc_provider (
@@ -149,9 +179,13 @@ export async function createRPCProvider(
        supports_ethereum,
        supports_arbitrum,
        supports_large_block_scans,
-       supports_ens
+       supports_ethereum_block_scans,
+       supports_arbitrum_block_scans,
+       supports_ens,
+       ethereum_probe,
+       arbitrum_probe
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING
        id,
        name,
@@ -164,7 +198,11 @@ export async function createRPCProvider(
        supports_ethereum,
        supports_arbitrum,
        supports_large_block_scans,
+       supports_ethereum_block_scans,
+       supports_arbitrum_block_scans,
        supports_ens,
+       ethereum_probe,
+       arbitrum_probe,
        created_at,
        updated_at`,
     [
@@ -177,8 +215,12 @@ export async function createRPCProvider(
       config.isActive,
       true,
       normalizedArbitrumUrl !== null,
-      config.supportsLargeBlockScans ?? true,
+      supportsEthereumBlockScans || supportsArbitrumBlockScans,
+      supportsEthereumBlockScans,
+      supportsArbitrumBlockScans,
       config.supportsENS ?? true,
+      config.ethereumProbe ?? null,
+      config.arbitrumProbe ?? null,
     ]
   );
 
@@ -234,10 +276,34 @@ export async function updateRPCProvider(
   if (updates.supportsLargeBlockScans !== undefined) {
     fields.push(`supports_large_block_scans = $${paramIndex++}`);
     values.push(updates.supportsLargeBlockScans);
+    if (updates.supportsEthereumBlockScans === undefined) {
+      fields.push(`supports_ethereum_block_scans = $${paramIndex++}`);
+      values.push(updates.supportsLargeBlockScans);
+    }
+    if (updates.supportsArbitrumBlockScans === undefined) {
+      fields.push(`supports_arbitrum_block_scans = $${paramIndex++}`);
+      values.push(updates.supportsLargeBlockScans);
+    }
+  }
+  if (updates.supportsEthereumBlockScans !== undefined) {
+    fields.push(`supports_ethereum_block_scans = $${paramIndex++}`);
+    values.push(updates.supportsEthereumBlockScans);
+  }
+  if (updates.supportsArbitrumBlockScans !== undefined) {
+    fields.push(`supports_arbitrum_block_scans = $${paramIndex++}`);
+    values.push(updates.supportsArbitrumBlockScans);
   }
   if (updates.supportsENS !== undefined) {
     fields.push(`supports_ens = $${paramIndex++}`);
     values.push(updates.supportsENS);
+  }
+  if (updates.ethereumProbe !== undefined) {
+    fields.push(`ethereum_probe = $${paramIndex++}`);
+    values.push(updates.ethereumProbe);
+  }
+  if (updates.arbitrumProbe !== undefined) {
+    fields.push(`arbitrum_probe = $${paramIndex++}`);
+    values.push(updates.arbitrumProbe);
   }
 
   if (fields.length === 0) {
@@ -263,10 +329,70 @@ export async function updateRPCProvider(
        supports_ethereum,
        supports_arbitrum,
        supports_large_block_scans,
+       supports_ethereum_block_scans,
+       supports_arbitrum_block_scans,
        supports_ens,
+       ethereum_probe,
+       arbitrum_probe,
        created_at,
        updated_at`,
     values
+  );
+
+  return row ? rowToConfig(row) : null;
+}
+
+/**
+ * Persist sanitized per-chain capability probes and keep routing flags in sync.
+ */
+export async function updateRPCProviderProbeResults(
+  id: number,
+  probes: RPCProviderProbeResult
+): Promise<RPCProviderConfig | null> {
+  const ethereumScanCompatible = probes.ethereum.blockScan.compatible;
+  const arbitrumScanCompatible = probes.arbitrum?.blockScan.compatible ?? false;
+  const ethereumScanConclusive = probes.ethereum.blockScan.conclusive;
+  const arbitrumScanConclusive = probes.arbitrum?.blockScan.conclusive ?? true;
+  const row = await queryOne<RPCProviderRow>(
+    `UPDATE rpc_provider
+     SET ethereum_probe = $2,
+         arbitrum_probe = $3,
+         supports_ethereum_block_scans = CASE WHEN $4 THEN $5 ELSE supports_ethereum_block_scans END,
+         supports_arbitrum_block_scans = CASE WHEN $6 THEN $7 ELSE supports_arbitrum_block_scans END,
+         supports_large_block_scans = (
+           CASE WHEN $4 THEN $5 ELSE supports_ethereum_block_scans END
+           OR CASE WHEN $6 THEN $7 ELSE supports_arbitrum_block_scans END
+         ),
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING
+       id,
+       name,
+       url,
+       arbitrum_url,
+       calls_per_second,
+       calls_per_day,
+       priority,
+       is_active,
+       supports_ethereum,
+       supports_arbitrum,
+       supports_large_block_scans,
+       supports_ethereum_block_scans,
+       supports_arbitrum_block_scans,
+       supports_ens,
+       ethereum_probe,
+       arbitrum_probe,
+       created_at,
+       updated_at`,
+    [
+      id,
+      probes.ethereum,
+      probes.arbitrum,
+      ethereumScanConclusive,
+      ethereumScanCompatible,
+      arbitrumScanConclusive,
+      arbitrumScanCompatible,
+    ]
   );
 
   return row ? rowToConfig(row) : null;

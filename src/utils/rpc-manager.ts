@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { RPCChainProbeResult } from '../types/rpc-provider';
 
 /**
  * RPC Provider Configuration
@@ -15,7 +16,11 @@ export interface RPCProviderConfig {
   supportsEthereum?: boolean; // Can serve Ethereum mainnet (chainId 1)
   supportsArbitrum?: boolean; // Can serve Arbitrum One (chainId 42161)
   supportsLargeBlockScans?: boolean; // Can handle eth_getLogs with large block ranges (10k+ blocks)
+  supportsEthereumBlockScans?: boolean;
+  supportsArbitrumBlockScans?: boolean;
   supportsENS?: boolean; // Can handle ENS resolution (resolveName, lookupAddress)
+  ethereumProbe?: RPCChainProbeResult | null;
+  arbitrumProbe?: RPCChainProbeResult | null;
 }
 
 /**
@@ -222,9 +227,8 @@ export class RPCManager {
       if (backoffRemaining > 0) {
         return false;
       }
-      // Backoff period over, reset error count
-      state.consecutiveErrors = 0;
-      state.isHealthy = true;
+      // Backoff is over, so allow one real request to prove recovery. Keep the
+      // provider unhealthy until markProviderSuccess observes that success.
     }
 
     // Check daily limit
