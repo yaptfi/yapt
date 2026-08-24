@@ -96,15 +96,15 @@ Positions have three semantic categories, derived at the service layer from the 
 - RPC rate limiting is primarily handled by `RPCManager` (not fixed sleep loops).
 - `rpcThrottle()` is currently a compatibility no-op; keep existing callsites consistent with nearby code patterns.
 - Normal calls (`balanceOf`, reads, etc.) should use `getProvider()`/`getContract()` (load-balanced path).
-- Historical scans (`queryFilter`/`getLogs`) should use `getScanCapableProviderForChain()`; do not obtain a direct underlying provider or bypass `RPCManager`.
+- Full-history scans (`queryFilter`/`getLogs`) should use `getScanCapableProviderForChain()`; do not obtain a direct underlying provider or bypass `RPCManager`. Uniswap v4 is the explicit exception: its bounded incremental inventory discovery uses the normal managed chain provider.
 - Managed scan providers are rate-limited and fail over only across providers with `supportsLargeBlockScans=true`. Keep the returned scan-provider object stable so inventory caches can share work.
 - `supportsLargeBlockScans=true` means the endpoint can serve historical `eth_getLogs`; it does not mean unlimited ranges. Shared scanners must adapt provider-reported range limits.
-- Uniswap v4 inventory scans have a hard `eth_getLogs` query/time budget. Keep in-flight cache entries pinned until settlement, and do not swallow ambiguous `ownerOf` failures or raise scan budgets to accommodate narrow-range Arbitrum endpoints.
+- Uniswap v4 inventory discovery has a shared query/time budget across ownership batches and incremental logs. Keep in-flight cache entries pinned until settlement, persist resumable progress, retain verified partial inventory, and do not raise budgets to accommodate narrow-range Arbitrum endpoints.
 - Managed JSON-RPC providers deliberately disable ethers batching and pin their configured network. This avoids id-less throttle responses becoming mixed-batch `BAD_DATA` errors and avoids redundant `eth_chainId` calls.
-- Configure at least two independent scan-capable providers for resilient discovery. Multiple URLs sharing one vendor project/quota are not true quota failover.
-- If no scan-capable provider is available, skip that protocol gracefully and log a warning.
+- Configure at least two independent providers for resilient discovery; only full-history adapters require both to be scan-capable. Multiple URLs sharing one vendor project/quota are not true quota failover.
+- If no scan-capable provider is available, skip protocols that require full history gracefully and log a warning. Do not skip Uniswap v4 when a normal chain provider is available.
 - `supports_large_block_scans` is the legacy aggregate from migration `1733000030000_add-rpc-supports-large-block-scans.js`. Database providers use probe-derived per-chain flags and sanitized probe results from `1733000057000_add-rpc-provider-probe-results.js`; do not add UI controls that set scan flags manually.
-- The admin wizard and **Retest saved** action actively verify `eth_chainId`, `eth_blockNumber`, and historical `eth_getLogs`. Never return or log the tested RPC URLs or API keys in probe results.
+- The admin wizard and **Retest saved** action actively verify `eth_chainId`, `eth_blockNumber`, Uniswap v4 state reads, incremental `eth_getLogs`, and full-history suitability. Never return or log the tested RPC URLs or API keys in probe results.
 - RPCManager health is passive live-traffic telemetry. Do not present it as proof that connectivity or historical scan capability was actively tested.
 
 ## Adapter and Plugin Guidance
@@ -123,7 +123,7 @@ Positions have three semantic categories, derived at the service layer from the 
 
 Protocol-specific gotchas worth preserving:
 - Yearn-style ERC4626 vaults can have different share vs asset decimals (`shareDecimals` vs `decimals`).
-- Uniswap v4 discovery uses the shared inventory scanner: read `balanceOf` at a fixed latest block, scan incoming NFT transfers newest-to-oldest in adaptive chunks, verify `ownerOf` at that same block, and stop when the balance is satisfied.
+- Uniswap v4 discovery uses the shared persisted inventory scanner: verify DB-known NFT IDs at a fixed latest block, compare `balanceOf`, scan new sequential token IDs with Multicall3, use adaptive incremental transfer logs for older transfers, and persist a resumable cold-scan cursor. Stop when the verified count satisfies `balanceOf`; never discard verified partial results because later discovery work failed.
 - Preserve recursive ethers error parsing for nested `error`, `info`, and `value[]` payloads; Infura throttles have appeared as `BAD_DATA` with `-32005`/`Too Many Requests` inside `value[]`.
 - For Uniswap v4 pool reads, use the Position Manager as owner when querying position state.
 - Decode packed int24 ticks with proper two's-complement conversion.

@@ -1,3 +1,4 @@
+import { ethers } from 'ethers';
 import { getProtocolConfig } from '../utils/config';
 import {
   RPCBasicProbeResult,
@@ -13,13 +14,14 @@ import {
 
 const ETHEREUM_CHAIN_ID = 1;
 const ARBITRUM_CHAIN_ID = 42161;
-const MINIMUM_USEFUL_SCAN_RANGE = 10_000;
+const MINIMUM_INCREMENTAL_SCAN_RANGE = 1_000;
 const PROBE_TIMEOUT_MS = 8_000;
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 // An indexed address topic always has twelve leading zero bytes, so this topic
 // cannot match a valid ERC-721 `from` address. It keeps capability probes small
 // while still forcing the provider to execute the requested historical range.
 const IMPOSSIBLE_ADDRESS_TOPIC = `0x${'f'.repeat(64)}`;
+const NEXT_TOKEN_ID_CALL_DATA = ethers.id('nextTokenId()').slice(0, 10);
 
 interface ProbeTarget {
   chainId: number;
@@ -261,7 +263,26 @@ async function probeBlockScan(
   let adapted = false;
   let usedReportedLimit = false;
 
-  while (range >= MINIMUM_USEFUL_SCAN_RANGE) {
+  try {
+    const nextTokenId = await rpcRequest<string>(url, 'eth_call', [{
+      to: address,
+      data: NEXT_TOKEN_ID_CALL_DATA,
+    }, 'latest']);
+    BigInt(nextTokenId);
+  } catch (error) {
+    const requestError = error instanceof RPCProbeRequestError ? error : null;
+    return {
+      compatible: false,
+      incrementalCompatible: false,
+      conclusive: !isTransientErrorCategory(requestError?.category),
+      status: requestError?.category === 'rpc-error' ? 'unsupported' : 'failed',
+      latencyMs: Date.now() - startedAtMs,
+      errorCategory: requestError?.category || 'rpc-error',
+      message: `Uniswap v4 state reads failed: ${sanitizeMessage(error instanceof Error ? error.message : String(error))}`,
+    };
+  }
+
+  while (range >= MINIMUM_INCREMENTAL_SCAN_RANGE) {
     try {
       const logs = await rpcRequest<unknown[]>(url, 'eth_getLogs', [{
         address,
@@ -278,6 +299,7 @@ async function probeBlockScan(
       if (estimatedFullScanQueries > maxEstimatedFullScanQueries) {
         return {
           compatible: false,
+          incrementalCompatible: true,
           conclusive: true,
           status: 'unsupported',
           latencyMs: Date.now() - startedAtMs,
@@ -285,13 +307,15 @@ async function probeBlockScan(
           maxBlockRange: range,
           estimatedFullScanQueries,
           message:
-            `Historical logs work at ${range.toLocaleString()} blocks, but a full discovery would require ` +
-            `about ${estimatedFullScanQueries.toLocaleString()} queries (maximum ${maxEstimatedFullScanQueries.toLocaleString()})`,
+            `Historical logs work at ${range.toLocaleString()} blocks, but a full-history scan would require ` +
+            `about ${estimatedFullScanQueries.toLocaleString()} queries (maximum ${maxEstimatedFullScanQueries.toLocaleString()}). ` +
+            'Incremental Uniswap v4 discovery is supported.',
         };
       }
 
       return {
         compatible: true,
+        incrementalCompatible: true,
         conclusive: true,
         status: adapted ? 'range-limited' : 'supported',
         latencyMs: Date.now() - startedAtMs,
@@ -309,6 +333,7 @@ async function probeBlockScan(
         const requestError = error instanceof RPCProbeRequestError ? error : null;
         return {
           compatible: false,
+          incrementalCompatible: false,
           conclusive: !isTransientErrorCategory(requestError?.category),
           status: requestError?.category === 'rpc-error' ? 'unsupported' : 'failed',
           latencyMs: Date.now() - startedAtMs,
@@ -321,14 +346,15 @@ async function probeBlockScan(
       const nextRange = reportedLimit !== null && reportedLimit < range
         ? reportedLimit
         : Math.floor(range / 2);
-      if (nextRange < MINIMUM_USEFUL_SCAN_RANGE) {
+      if (nextRange < MINIMUM_INCREMENTAL_SCAN_RANGE) {
         return {
           compatible: false,
+          incrementalCompatible: false,
           conclusive: true,
           status: 'unsupported',
           latencyMs: Date.now() - startedAtMs,
           maxBlockRange: Math.max(0, nextRange),
-          message: `Reported block range ${nextRange.toLocaleString()} is below the required minimum of ${MINIMUM_USEFUL_SCAN_RANGE.toLocaleString()}`,
+          message: `Reported block range ${nextRange.toLocaleString()} is below the incremental minimum of ${MINIMUM_INCREMENTAL_SCAN_RANGE.toLocaleString()}`,
         };
       }
       usedReportedLimit = reportedLimit !== null && reportedLimit < range;
@@ -339,6 +365,7 @@ async function probeBlockScan(
 
   return {
     compatible: false,
+    incrementalCompatible: false,
     conclusive: true,
     status: 'unsupported',
     latencyMs: Date.now() - startedAtMs,
@@ -356,6 +383,7 @@ export async function probeRPCChain(url: string, chainId: number): Promise<RPCCh
     ? await probeBlockScan(normalizedUrl, target, basic.blockNumber as number)
     : {
         compatible: false,
+        incrementalCompatible: false,
         conclusive: basicFailureIsConclusive,
         status: 'not-tested' as const,
         latencyMs: 0,
@@ -364,7 +392,7 @@ export async function probeRPCChain(url: string, chainId: number): Promise<RPCCh
       };
 
   return {
-    probeVersion: 2,
+    probeVersion: 3,
     chainId,
     chainName: target.chainName,
     checkedAt: new Date().toISOString(),

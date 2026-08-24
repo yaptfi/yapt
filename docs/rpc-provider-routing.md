@@ -2,10 +2,10 @@
 
 ## Purpose
 
-Yapt routes ordinary RPC reads and historical log scans differently. Historical
-`eth_getLogs` calls are more expensive, have provider-specific range limits, and
-are more likely to exhaust throughput or daily credits. The scan path therefore
-needs capability filtering, pacing, adaptive ranges, and failover.
+Yapt routes ordinary RPC reads and full-history log scans differently. Uniswap
+v4 inventory discovery is deliberately incremental and uses the normal managed
+provider path; it no longer requires replaying Position Manager logs from the
+deployment block.
 
 ## Routing architecture
 
@@ -35,6 +35,13 @@ health tracking, and failover behavior.
 Do not bypass this path by extracting an underlying provider. Doing so bypasses
 configured pacing and makes additional RPC servers ineffective for discovery.
 
+This scan-only path remains for adapters that genuinely need a full historical
+log walk. Uniswap v4 is not one of them: its persisted inventory, sequential
+token-ID batches, and short incremental transfer scan use
+`getProviderForChain()` so every healthy chain provider can contribute. An
+endpoint's full-history scan flag therefore does not determine whether it can
+participate in Uniswap v4 discovery.
+
 ### Transport invariants
 
 Managed providers are created with:
@@ -56,11 +63,9 @@ correct per-chain value to `supportsLargeBlockScans` when it builds each chain's
 RPC manager.
 
 Do not set database scan flags manually. The admin capability probe sets them
-after it verifies the endpoint. Range limits are evaluated against each chain's
-actual Position Manager history: the endpoint is scan-eligible only when a full
-inventory scan is estimated to fit within 500 log queries. A 10,000-block limit
-can therefore remain eligible on Ethereum while being rejected for Arbitrum's
-much larger block history.
+after it verifies the endpoint. These flags mean the endpoint can handle an
+adapter's full historical log workload within the configured query budget; they
+do not mean that Uniswap v4 needs a full-history scan.
 
 An endpoint that passes ordinary chain reads but cannot serve a useful
 historical-log range remains available for normal contract reads but does not
@@ -80,14 +85,16 @@ The admin page shows two different signals:
   recovers after backoff plus a successful request. This is not a connectivity
   test.
 - **Verified capabilities** are active, direct JSON-RPC probes. Each configured
-  chain checks `eth_chainId`, `eth_blockNumber`, and a real historical
-  `eth_getLogs` query against the configured Uniswap v4 Position Manager.
+  chain checks `eth_chainId`, `eth_blockNumber`, a Uniswap v4 `nextTokenId()`
+  state read, and a real `eth_getLogs` query against the Position Manager.
 
-The historical probe starts at 500,000 blocks. If the endpoint reports a range
-limit, the probe retries at that limit; otherwise it halves recognized
-range-rejection failures. It records the estimated number of calls required to
-cover the chain's full relevant history and rejects endpoints requiring more
-than the scanner's 500-query budget.
+The log probe starts at 500,000 blocks. If the endpoint reports a range limit,
+the probe retries at that limit; otherwise it halves recognized range-rejection
+failures. A working range of at least 1,000 blocks qualifies for incremental
+Uniswap v4 transfer checks. Full-history routing is reported separately and is
+enabled only when the chain's full relevant history fits within the configured
+500-query budget. Thus a 6,250-block Arbitrum endpoint is useful for v4 even
+though the UI leaves its other full-history routing disabled.
 Probe records include the check time, latency, sanitized status, and detected
 range, but never the endpoint URL or API key.
 
@@ -103,27 +110,34 @@ appears, and saving re-runs the checks server-side before changing the row.
 
 ## Uniswap v4 inventory scan
 
-`src/utils/uniswap-v4-inventory.ts` performs one shared inventory scan for all v4
-adapters using the same wallet, Position Manager, start block, and provider.
+`src/utils/uniswap-v4-inventory.ts` performs one shared inventory discovery for
+all v4 adapters using the same wallet, chain, Position Manager, and provider.
+Verified inventory and progress are stored in
+`uniswap_v4_inventory_state` (migration
+`1733000058000_add-uniswap-v4-inventory-state.js`). Existing active positions
+seed this state on the first run after migration.
 
 The scanner:
 
-1. Gets one latest block and uses it as the block tag for the inventory read.
-2. Reads the wallet's Position Manager `balanceOf` at that block.
-3. Returns immediately for a zero balance.
-4. Scans incoming NFT `Transfer` events newest-to-oldest.
-5. Starts with `UNISWAP_V4_SCAN_CHUNK_SIZE` (default 500,000 blocks).
-6. Uses a provider-reported block limit when available; otherwise halves a
-   rejected range until accepted.
-7. Retries transient throttles with backoff. Error parsing must inspect nested
-   ethers fields, including `error`, `info`, `data`, and `value[]`.
-8. Deduplicates token IDs and verifies `ownerOf` at the fixed latest block.
-   Transient ownership-read errors are retried; ambiguous errors abort the scan
-   instead of silently discarding the NFT and continuing through history.
-9. Stops as soon as the number of verified NFTs equals `balanceOf`.
-10. Stops with an explicit error after 500 `eth_getLogs` attempts or 10 minutes
-    by default, rather than walking an impractically large history forever.
-11. Throws an explicit mismatch if configured history is exhausted first.
+1. Gets one latest block and uses it as the block tag for all ownership reads.
+2. Loads checkpointed token IDs plus active-position metadata and verifies each
+   with `ownerOf`.
+3. Reads `balanceOf` and `nextTokenId()` at the fixed block. A zero balance is a
+   complete result and performs no enumeration or log scan.
+4. If new Position Manager IDs exist, checks those IDs newest-first through
+   Multicall3 ownership batches (500 IDs by default). A newly minted position is
+   normally found in one call even on fast-block chains.
+5. If ownership changed without minting, scans only incoming transfers since
+   the last complete checkpoint. Provider-reported block limits such as 6,250
+   are accepted; otherwise a rejected range is halved.
+6. For an unseeded wallet or unresolved old transfer, performs a bounded
+   newest-first token-ID scan and persists its cursor. The next re-scan resumes
+   instead of starting over.
+7. Deduplicates IDs and stops as soon as the verified count equals `balanceOf`.
+8. Enforces a combined 500-query/10-minute budget by default. If the budget or
+   a provider fails after some NFTs were verified, those positions are returned
+   and progress is saved. A run throws only when it cannot verify any usable
+   inventory.
 
 In-flight inventory promises never expire, so every sibling v4 adapter joins
 the same long-running scan. Successful inventories are cached for 60 seconds
@@ -131,8 +145,11 @@ after completion. Terminal failures are cached for five minutes to prevent the
 next adapter from immediately repeating hundreds of requests.
 
 The safety limits can be overridden deliberately with
-`UNISWAP_V4_MAX_LOG_QUERIES` and `UNISWAP_V4_SCAN_TIMEOUT_MS`. Raising them is
-usually the wrong fix; prefer a provider that accepts larger block ranges.
+`UNISWAP_V4_MAX_LOG_QUERIES` (a legacy name that now covers both bounded
+ownership batches and log queries), `UNISWAP_V4_SCAN_TIMEOUT_MS`,
+`UNISWAP_V4_OWNER_BATCH_SIZE`, `UNISWAP_V4_RECENT_TOKEN_WINDOW`, and
+`UNISWAP_V4_RECENT_SCAN_BLOCKS`. Raising them is usually the wrong fix because
+normal progress is resumable.
 
 ## Configuration
 
@@ -149,23 +166,23 @@ Use the **Add RPC Provider Wizard**:
    Arbitrum unless that separate URL is present.
 3. Set conservative local rate and daily limits.
 4. Select **Test URLs & Detect Capabilities**. Read the per-chain connectivity
-   and historical-log results.
+   plus the v4 incremental and other full-history results.
 5. If a check fails or is throttled, edit the URL and retry. **Add Verified
    Provider** appears only after every configured endpoint has a conclusive
    result.
 
-Saving re-runs the checks server-side, then enables historical routing only on
-the chains that passed. A provider with conclusively unsupported historical
-logs can still be saved for ordinary reads.
+Saving re-runs the checks server-side, then enables other full-history routing
+only on the chains that passed. A range-limited provider can still be saved and
+used for normal reads and incremental Uniswap v4 discovery.
 
 Creating or editing providers through the admin API reloads the in-process
 provider managers automatically. Editing an existing Arbitrum URL also probes
 the changed endpoint before saving it.
 
-The admin provider table reports the active historical-scan route count for each
-chain. A count of `1` means scans can run but cannot fail over; a count of `2` or
-more means scan failover is available. Startup logs report the same count, and a
-successful fallback logs the backup provider name without its URL.
+The admin provider table reports the active full-history scan route count for
+each chain. This count does not include normal providers available to Uniswap
+v4. Startup logs report the same full-history count, and a successful fallback
+logs the backup provider name without its URL.
 
 ### Environment configuration
 
@@ -186,15 +203,17 @@ environment configuration.
 
 ## Reliability recommendations
 
-- Configure at least two independent scan-capable providers per required chain.
+- Configure at least two independent normal providers per required chain when
+  reliability matters. They need not support large block ranges for v4.
 - Prefer separate vendor projects or vendors; two URLs sharing one quota do not
   protect against project-level credit exhaustion.
-- Start scan-capable endpoints around 1 call/second when the true allowance is
+- Start endpoints around 1 call/second when the true allowance is
   unknown, then tune from observed provider status and vendor limits.
-- Keep range-limited endpoints scan-enabled if they reliably serve historical
-  logs; the inventory scanner adapts the range.
-- A second provider helps only after it is active for the chain and its
-  historical scan probe has passed.
+- Keep range-limited endpoints active if they reliably serve state calls and
+  incremental logs; the v4 inventory scanner adapts the range.
+- A second provider helps v4 as soon as it is active on the chain. A passed
+  full-history probe is required only for adapters routed through the scan-only
+  provider path.
 
 No retry strategy can overcome an exhausted daily/project quota when every
 eligible provider shares that quota. Add an independent backup or increase the
@@ -209,11 +228,12 @@ once for that inventory scan and must not include an RPC URL or credentials.
 
 ### `Too Many Requests`, `-32005`, or all providers rate limited
 
-1. Confirm the deployed scan path uses the managed scan-only provider.
+1. Confirm the deployed v4 path uses the normal managed chain provider.
 2. Lower `callsPerSecond` for the throttled endpoint.
 3. Check its daily/project credit usage.
 4. Confirm at least one independent backup has an Arbitrum URL (when relevant),
-   is active, and shows **Scan routing: enabled** after a recent capability test.
+   is active, and shows **Incremental Uniswap v4: supported** after a recent
+   capability test.
 5. Use **Retest saved** or **Edit & test** in the admin UI. This distinguishes a bad key/wrong chain,
    transient throttle, and unsupported historical range before another wallet
    re-scan is attempted.
@@ -235,30 +255,31 @@ The recursive retry classifier still handles this legacy/provider error shape.
 
 ### `No scan-capable RPC provider available`
 
-At least one active provider for that chain must have passed the historical-log
-probe. A normal-only provider cannot be used as a silent fallback for
-historical scans.
+This message now concerns an adapter that still requires a genuine full-history
+scan; it should not be emitted by Uniswap v4 discovery. V4 uses active normal
+providers and its own bounded, resumable inventory state.
 
-### Inventory history mismatch
+### Incomplete inventory
 
-An error such as `found 1 of 2 NFTs reported by balanceOf` means the scanner
-reached its configured deployment block without finding every currently owned
-NFT. Check the protocol's `deployBlock`, provider historical-log completeness,
-and any swallowed/non-retryable `ownerOf` errors before changing the invariant.
+`Inventory discovery is incomplete` means the bounded run could not yet verify
+all NFTs reported by `balanceOf`. Verified positions are retained, and a cold
+cursor is saved for the next run. Check provider state-call health and re-scan;
+do not increase the budget merely because Arbitrum has many blocks.
 
 ## Regression tests
 
 Relevant deterministic tests are:
 
-- `tests/utils/uniswap-v4-inventory.test.ts`—range adaptation, newest-first
-  stopping, ownership, retries, production nested error payloads, and failure
-  caching;
+- `tests/utils/uniswap-v4-inventory.test.ts`—persisted seeds, batched token-ID
+  discovery, incremental range adaptation, partial results, resumable cursors,
+  ownership retries, and shared caching;
 - `tests/utils/rpc-manager.test.ts`—scan capability filtering, throttled-provider
   failover, batching options, static networks, quota accounting, and low rates;
 - `tests/utils/rpc-proxy-provider.test.ts`—stable scan-only provider routing;
 - `tests/utils/ethereum.test.ts`—chain initialization and capability selection.
-- `tests/services/rpc-provider-probe.test.ts`—chain validation, full and
-  range-limited historical scans, throttling, and unusably small ranges;
+- `tests/services/rpc-provider-probe.test.ts`—chain validation, v4 state reads,
+  full and range-limited logs (including 6,250 blocks), throttling, and unusably
+  small ranges;
 - `tests/routes/admin.rpc-providers.contract.test.ts`—wizard, re-probe, and
   probe-derived routing contracts.
 

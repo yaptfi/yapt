@@ -49,6 +49,7 @@ const PROBE: RPCProviderProbeResult = {
     basic: { ok: true, blockNumber: 1, latencyMs: 10, message: 'Connected at block 1' },
     blockScan: {
       compatible: true,
+      incrementalCompatible: true,
       conclusive: true,
       status: 'supported',
       latencyMs: 20,
@@ -64,6 +65,7 @@ const PROBE: RPCProviderProbeResult = {
     basic: { ok: true, blockNumber: 2, latencyMs: 10, message: 'Connected at block 2' },
     blockScan: {
       compatible: true,
+      incrementalCompatible: true,
       conclusive: true,
       status: 'range-limited',
       latencyMs: 20,
@@ -187,6 +189,7 @@ describe('admin RPC provider capability routes', () => {
         ...PROBE.arbitrum!,
         blockScan: {
           compatible: false,
+          incrementalCompatible: false,
           conclusive: false,
           status: 'failed',
           latencyMs: 20,

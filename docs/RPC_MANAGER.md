@@ -64,8 +64,9 @@ ETH_RPC_LIMITS=10,5,8
 2. Open `/admin.html` and use **Add RPC Provider Wizard**. Paste the vendor's
    Ethereum URL (including its API key) and, optionally, its separate Arbitrum
    URL.
-3. Run **Test URLs & Detect Capabilities**. The app verifies both chain identity
-   and historical log support. Edit and retry any failed URL before saving.
+3. Run **Test URLs & Detect Capabilities**. The app verifies chain identity,
+   Uniswap v4 state reads, incremental log ranges, and other full-history
+   suitability separately. Edit and retry any failed URL before saving.
 
 Avoid direct SQL insertion: it bypasses the active capability probe and leaves
 the admin page without evidence about the endpoint.
@@ -104,7 +105,8 @@ CREATE TABLE rpc_provider (
 - **priority**: Higher values = preferred (used for sorting)
 - **is_active**: Enable/disable without deletion
 - **supports_ethereum_block_scans / supports_arbitrum_block_scans**:
-  per-chain routing eligibility set by active probes
+  per-chain full-history routing eligibility set by active probes (not required
+  for incremental Uniswap v4 inventory discovery)
 - **ethereum_probe / arbitrum_probe**: latest sanitized connectivity and
   historical-log evidence (no endpoint URL or API key)
 
@@ -115,7 +117,9 @@ The provider table deliberately shows two different concepts:
 - **Runtime state** is passive health observed from real requests. It starts with
   no error data and changes as RPCManager sees failures and recoveries.
 - **Verified capabilities** come from direct provider-specific checks of
-  `eth_chainId`, `eth_blockNumber`, and a historical `eth_getLogs` range.
+  `eth_chainId`, `eth_blockNumber`, Uniswap v4 `nextTokenId()`, and an
+  `eth_getLogs` range. Incremental v4 and other full-history suitability are
+  displayed independently.
 
 Use **Retest saved** for an immediate active check. Missing and stale probe records
 are refreshed automatically while the admin page is open. A transient throttle

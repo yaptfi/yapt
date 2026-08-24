@@ -22,7 +22,6 @@ jest.mock('../../src/utils/ethereum', () => ({
   ARBITRUM_CHAIN_ID: 42161,
   getContract: jest.fn(),
   getProviderForChain: jest.fn(),
-  getScanCapableProviderForChain: jest.fn(),
   normalizeAddress: jest.fn((address: string) => {
     if (address === RAW_STATE_VIEW) {
       return STATE_VIEW;
@@ -42,7 +41,6 @@ import {
   formatUnits,
   getContract,
   getProviderForChain,
-  getScanCapableProviderForChain,
 } from '../../src/utils/ethereum';
 import { getWalletUniswapV4Inventory } from '../../src/utils/uniswap-v4-inventory';
 
@@ -121,7 +119,6 @@ describe('UniswapV4WbtcUsdcRewardsAdapter', () => {
     (getAbi as jest.Mock).mockReturnValue([]);
     (getStablePriceOverrides as jest.Mock).mockReturnValue({ USDC: 1.0 });
     (getProviderForChain as jest.Mock).mockReturnValue({ name: 'arbitrum-provider' });
-    (getScanCapableProviderForChain as jest.Mock).mockReturnValue({ name: 'arbitrum-scan-provider' });
     (formatUnits as jest.Mock).mockReturnValue('0');
 
     stateViewContract = {
@@ -139,23 +136,24 @@ describe('UniswapV4WbtcUsdcRewardsAdapter', () => {
     });
   });
 
-  it('discovers Arbitrum positions with the configured chain scan provider only when liquidity remains', async () => {
-    const scanProvider = { name: 'arbitrum-scan-provider' };
-    (getScanCapableProviderForChain as jest.Mock).mockReturnValue(scanProvider);
+  it('discovers Arbitrum positions with the normal chain provider when liquidity remains', async () => {
+    const provider = { name: 'arbitrum-provider' };
+    (getProviderForChain as jest.Mock).mockReturnValue(provider);
     (getWalletUniswapV4Inventory as jest.Mock).mockResolvedValue([createInventoryEntry()]);
     stateViewContract.getPositionInfo.mockResolvedValue([3n, 0n, 0n]);
 
     const adapter = new UniswapV4WbtcUsdcRewardsAdapter();
     const discovered = await adapter.discover(WALLET_ADDRESS);
 
-    expect(getScanCapableProviderForChain).toHaveBeenCalledWith(ARBITRUM_CHAIN_ID);
+    expect(getProviderForChain).toHaveBeenCalledWith(ARBITRUM_CHAIN_ID);
     expect(getWalletUniswapV4Inventory).toHaveBeenCalledWith(
       WALLET_ADDRESS,
       POSITION_MANAGER,
       297842893,
-      scanProvider
+      provider,
+      ARBITRUM_CHAIN_ID
     );
-    expect(getContract).toHaveBeenCalledWith(STATE_VIEW, [], scanProvider);
+    expect(getContract).toHaveBeenCalledWith(STATE_VIEW, [], provider);
     expect(discovered).toHaveLength(1);
     expect(discovered[0]?.metadata).toMatchObject({
       tokenId: '146749',
@@ -167,8 +165,6 @@ describe('UniswapV4WbtcUsdcRewardsAdapter', () => {
   });
 
   it('skips zero-liquidity shells during discovery', async () => {
-    const scanProvider = { name: 'arbitrum-scan-provider' };
-    (getScanCapableProviderForChain as jest.Mock).mockReturnValue(scanProvider);
     (getWalletUniswapV4Inventory as jest.Mock).mockResolvedValue([createInventoryEntry()]);
     stateViewContract.getPositionInfo.mockResolvedValue([0n, 0n, 0n]);
 
@@ -180,13 +176,13 @@ describe('UniswapV4WbtcUsdcRewardsAdapter', () => {
 
   it('propagates terminal inventory scan failures to the discovery service', async () => {
     (getWalletUniswapV4Inventory as jest.Mock).mockRejectedValue(
-      new Error('all scan-capable providers failed')
+      new Error('inventory RPC failed')
     );
 
     const adapter = new UniswapV4WbtcUsdcRewardsAdapter();
 
     await expect(adapter.discover(WALLET_ADDRESS)).rejects.toThrow(
-      'Uniswap v4 WBTC/USDC inventory scan failed: all scan-capable providers failed'
+      'Uniswap v4 WBTC/USDC inventory scan failed: inventory RPC failed'
     );
   });
 

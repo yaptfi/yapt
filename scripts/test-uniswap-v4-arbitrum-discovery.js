@@ -264,7 +264,8 @@ async function probeProvider(candidate, tokenId) {
     owner,
     OFFICIAL_ARBITRUM_V4.positionManager,
     deployBlock,
-    provider
+    provider,
+    ARBITRUM_CHAIN_ID
   );
   const matchingInventory = inventory.filter(isArbitrumWbtcUsdcPosition);
   const targetEntry = matchingInventory.find((entry) => entry.tokenId === tokenId);

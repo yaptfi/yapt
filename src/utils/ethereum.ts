@@ -394,10 +394,10 @@ export function parseUnits(value: string, decimals: number): bigint {
 // Multicall3 helpers (optional optimization)
 const DEFAULT_MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
-export function getMulticallContract(address?: string): Contract {
+export function getMulticallContract(address?: string, providerOverride?: Provider): Contract {
   const multicallAddress = address || process.env.MULTICALL3_ADDRESS || DEFAULT_MULTICALL3_ADDRESS;
   const abi = getAbi('Multicall3');
-  return getContract(multicallAddress, abi);
+  return getContract(multicallAddress, abi, providerOverride);
 }
 
 export async function multicallTryAggregate(

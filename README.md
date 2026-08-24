@@ -205,8 +205,11 @@ Yapt uses capability-based routing to handle RPC provider limitations:
 
 - **Chain-aware routing**: Providers are selected by chain capability (Ethereum and/or Arbitrum)
 - **Normal calls** (balances, state): Load-balanced across healthy providers for that chain
-- **Historical scans** (Uniswap discovery): Only providers verified for the
-  relevant chain's historical `eth_getLogs` workload
+- **Uniswap v4 discovery**: Uses normal healthy providers, verifies persisted
+  NFT IDs, and inspects sequential Position Manager token IDs in batched calls.
+  Small `eth_getLogs` ranges are sufficient for incremental transfer checks.
+- **Other historical scans**: Use only providers verified for that chain's
+  full-history `eth_getLogs` workload
 
 **Single Provider** (simplest):
 ```env
@@ -219,15 +222,15 @@ ETH_RPC_SUPPORTS_LARGE_BLOCK_SCANS=true
 **Multiple Providers** (optimal):
 - Add via admin panel at `/admin.html`
 - Use the add-provider wizard to test the Ethereum and optional Arbitrum URLs
-- The app verifies chain connectivity and historical block scans, adapts to
-  reported range limits, and enables scan routing per chain automatically
+- The app verifies chain connectivity, Uniswap v4 state reads, incremental log
+  ranges, and full-history scan suitability separately
 - Failed URLs stay editable so a key or endpoint can be corrected and re-tested
 - Environment fallback also supports comma-separated capability flags via `*_RPC_SCAN_CAPABILITIES` and `*_RPC_ENS_CAPABILITIES`
 - See `docs/rpc-provider-routing.md` for detailed configuration
 
 The admin table distinguishes passive runtime health from a timestamped active
-capability test. Providers that only support very small log ranges remain
-available for ordinary reads but are excluded from historical discovery.
+capability test. An endpoint limited to 6,250 blocks can support Uniswap v4
+incremental discovery even when it is excluded from other full-history scans.
 
 ### Production Deployment
 

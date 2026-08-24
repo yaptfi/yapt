@@ -6,7 +6,6 @@ import {
   formatUnits,
   getContract,
   getProviderForChain,
-  getScanCapableProviderForChain,
   normalizeAddress,
   toChecksumAddress,
 } from '../utils/ethereum';
@@ -75,14 +74,6 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
     }
   }
 
-  private getScanProvider(chainId: number) {
-    const provider = this.getChainProvider(chainId);
-    if (!provider) {
-      return null;
-    }
-    return getScanCapableProviderForChain(chainId);
-  }
-
   private resolveChainId(rawChainId: unknown, fallbackChainId: number): number {
     if (typeof rawChainId === 'number' && Number.isInteger(rawChainId)) {
       return rawChainId;
@@ -99,10 +90,8 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
   }
 
   /**
-   * Discover Uniswap v4 positions by scanning NFT Transfer events.
-   * Uses shared inventory cache — multiple v4 adapters share one eth_getLogs
-   * round-trip per wallet per TTL.
-   * REQUIRES: RPC provider with supportsLargeBlockScans=true
+   * Discover Uniswap v4 positions from verified persisted inventory, newly
+   * minted token IDs, and bounded incremental Transfer events.
    */
   async discover(walletAddress: string): Promise<Partial<Position>[]> {
     const config = this.getValidatedConfig();
@@ -110,9 +99,9 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
     const checksumAddress = toChecksumAddress(walletAddress);
     const positions: Partial<Position>[] = [];
 
-    const scanProvider = this.getScanProvider(config.chainId);
-    if (!scanProvider) {
-      throw new Error('[Uniswap v4] No scan-capable RPC provider available');
+    const provider = this.getChainProvider(config.chainId);
+    if (!provider) {
+      throw new Error('[Uniswap v4] No RPC provider available');
     }
 
     const fromBlock = config.deployBlock ?? 21688823;
@@ -122,7 +111,8 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
         checksumAddress,
         config.positionManager!,
         fromBlock,
-        scanProvider
+        provider,
+        config.chainId
       );
 
       const expectedCurrency0 = config.currency0!.toLowerCase();

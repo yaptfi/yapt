@@ -396,7 +396,7 @@
         <div><strong>How provider routing works:</strong> Ethereum uses the main URL. Arbitrum uses the optional Arbitrum URL when present, then health and rate limits apply per chain.</div>
         <div style="margin-top: 0.35rem;"><strong>Priority:</strong> higher numbers are preferred first. <strong>0</strong> means neutral/default (not disabled).</div>
         <div style="margin-top: 0.35rem;"><strong>Calls/Second:</strong> max average request rate allowed for this provider. Keep below your vendor quota.</div>
-        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> the wizard and provider tests detect chain connectivity and historical `eth_getLogs` support automatically. Range-limited endpoints are enabled when their tested limit is usable.</div>
+        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> the wizard checks chain connectivity, Uniswap v4 state reads, incremental `eth_getLogs`, and full-history scan suitability separately. A range-limited endpoint can support v4 discovery even when full-history routing stays disabled.</div>
         <div style="margin-top: 0.35rem;"><strong>Runtime state vs. verification:</strong> runtime state reflects passive live traffic and backoff. Timestamped capability cards are the active endpoint tests.</div>
       </div>
 
@@ -667,7 +667,7 @@
     }
 
     function probeIsStale(probe) {
-      if (!probe?.checkedAt || (probe.probeVersion ?? 0) < 2) return true;
+      if (!probe?.checkedAt || (probe.probeVersion ?? 0) < 3) return true;
       const checkedAtMs = new Date(probe.checkedAt).getTime();
       return !Number.isFinite(checkedAtMs) || Date.now() - checkedAtMs > RPC_PROBE_MAX_AGE_MS;
     }
@@ -677,6 +677,7 @@
       if (probe.blockScan?.compatible) {
         return probe.blockScan.status === 'range-limited' ? 'warn' : 'ok';
       }
+      if (probe.blockScan?.incrementalCompatible) return 'warn';
       return probe.blockScan?.conclusive ? 'warn' : 'error';
     }
 
@@ -686,7 +687,8 @@
           <div class="rpc-probe-card warn">
             <strong>${escapeHtml(label)}</strong>
             <div class="rpc-probe-line">Not tested yet</div>
-            <div class="rpc-probe-line">Historical scan routing: ${scanRoutingEnabled ? 'enabled from legacy configuration' : 'disabled'}</div>
+            <div class="rpc-probe-line">Incremental Uniswap v4: not verified</div>
+            <div class="rpc-probe-line">Other full-history scan routing: ${scanRoutingEnabled ? 'enabled from legacy configuration' : 'disabled'}</div>
           </div>
         `;
       }
@@ -695,12 +697,16 @@
         ? `Connected${probe.basic.blockNumber !== undefined ? ` at block ${Number(probe.basic.blockNumber).toLocaleString()}` : ''}`
         : `Connection failed: ${probe.basic?.message || 'Unknown error'}`;
       const scanText = probe.blockScan?.message || 'Historical logs were not tested';
+      const incrementalText = probe.blockScan?.incrementalCompatible
+        ? 'supported'
+        : probe.blockScan?.conclusive ? 'not supported' : 'not verified';
       return `
         <div class="rpc-probe-card ${probeCardClass(probe)}">
           <strong>${escapeHtml(label)}</strong>
           <div class="rpc-probe-line">Basic RPC: ${escapeHtml(basicText)}</div>
           <div class="rpc-probe-line">Historical logs: ${escapeHtml(scanText)}</div>
-          <div class="rpc-probe-line">Scan routing: ${scanRoutingEnabled ? 'enabled' : 'disabled'}</div>
+          <div class="rpc-probe-line">Incremental Uniswap v4: ${incrementalText}</div>
+          <div class="rpc-probe-line">Other full-history scan routing: ${scanRoutingEnabled ? 'enabled' : 'disabled'}</div>
           <div class="rpc-probe-line">Checked: ${escapeHtml(formatProbeTime(probe.checkedAt))}</div>
         </div>
       `;
@@ -794,7 +800,7 @@
         </div>
         <div class="rpc-probe-line" style="margin-top:0.75rem;">
           ${probe.canSave
-            ? `Checks are conclusive. You can ${rpcWizardEditingProviderId === null ? 'add this provider' : 'save these changes'}; compatible historical-scan routes will be enabled automatically.`
+            ? `Checks are conclusive. You can ${rpcWizardEditingProviderId === null ? 'add this provider' : 'save these changes'}; incremental v4 and other full-history capabilities are shown separately, and routing will be configured automatically.`
             : 'The checks did not complete conclusively. Edit the endpoint if needed, then retry.'}
         </div>
       `;
@@ -816,7 +822,7 @@
       rpcWizardProbeUrls = null;
       addBtn.style.display = 'none';
       probeBtn.disabled = true;
-      statusEl.textContent = 'Testing connectivity and historical block scans…';
+      statusEl.textContent = 'Testing connectivity, Uniswap v4 state reads, and block-range capabilities…';
       statusEl.style.color = 'var(--text-dim)';
 
       try {
@@ -897,7 +903,7 @@
         const arbScanCount = status?.arbitrum?.scanCapableProviderCount ?? 0;
         const scanRoutingSummary = `
           <div class="rpc-help" style="margin-bottom: 1rem;">
-            <strong>Active historical-scan routes:</strong>
+            <strong>Active full-history scan routes (not required by Uniswap v4):</strong>
             Ethereum ${ethScanCount} provider${ethScanCount === 1 ? '' : 's'};
             Arbitrum ${arbScanCount} provider${arbScanCount === 1 ? '' : 's'}.
             ${ethScanCount < 2 ? '<strong>Ethereum scan failover is unavailable.</strong>' : 'Ethereum scan failover is available.'}
@@ -1276,7 +1282,7 @@
           button.disabled = true;
           button.textContent = 'Testing…';
         }
-        showRpcProviderStatus('Testing connectivity and historical block scans…');
+        showRpcProviderStatus('Testing connectivity, Uniswap v4 state reads, and block-range capabilities…');
         const response = await fetch(`${API_BASE}/admin/rpc-providers/${providerId}/probe`, {
           method: 'POST',
           credentials: 'include',
@@ -1287,15 +1293,22 @@
         }
 
         await loadProviders();
-        const passedChains = [data.probe.ethereum, data.probe.arbitrum]
+        const incrementalChains = [data.probe.ethereum, data.probe.arbitrum]
+          .filter(Boolean)
+          .filter((probe) => probe.basic.ok && probe.blockScan.incrementalCompatible)
+          .map((probe) => probe.chainName);
+        const fullHistoryChains = [data.probe.ethereum, data.probe.arbitrum]
           .filter(Boolean)
           .filter((probe) => probe.basic.ok && probe.blockScan.compatible)
           .map((probe) => probe.chainName);
+        const fullHistorySuffix = fullHistoryChains.length > 0
+          ? ` Other full-history scans also verified for ${fullHistoryChains.join(' and ')}.`
+          : ' Other full-history scan routing remains disabled.';
         showRpcProviderStatus(
-          passedChains.length > 0
-            ? `Provider test finished. Historical scans verified for ${passedChains.join(' and ')}.`
-            : 'Provider test finished, but no endpoint qualified for historical scans. See the capability results.',
-          passedChains.length > 0 ? 'success' : 'error'
+          incrementalChains.length > 0
+            ? `Provider test finished. Incremental Uniswap v4 discovery is supported for ${incrementalChains.join(' and ')}.${fullHistorySuffix}`
+            : 'Provider test finished, but incremental Uniswap v4 discovery was not verified. See the capability results.',
+          incrementalChains.length > 0 ? 'success' : 'error'
         );
       } catch (error) {
         showRpcProviderStatus(`Provider test failed: ${error.message}`, 'error');

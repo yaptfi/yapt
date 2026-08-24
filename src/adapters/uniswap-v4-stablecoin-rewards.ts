@@ -7,7 +7,6 @@ import {
   formatUnits,
   getContract,
   getProviderForChain,
-  getScanCapableProviderForChain,
   normalizeAddress,
   toChecksumAddress,
 } from '../utils/ethereum';
@@ -38,8 +37,8 @@ interface UniswapV4PositionManagerContract {
  * Discovers a configured v4 pair and tracks only claimable fees in the
  * configured stablecoin reward token. LP principal is intentionally excluded.
  *
- * Uses the shared v4 inventory utility so multiple v4 adapters share a
- * single eth_getLogs round-trip per wallet per TTL.
+ * Uses the shared v4 inventory utility so multiple v4 adapters share verified
+ * persisted state and bounded incremental discovery.
  */
 export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
   private warnedMissingRpc = false;
@@ -110,14 +109,6 @@ export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
     }
   }
 
-  private getScanProvider(chainId: number): Provider | null {
-    const provider = this.getChainProvider(chainId);
-    if (!provider) {
-      return null;
-    }
-    return getScanCapableProviderForChain(chainId);
-  }
-
   private resolveChainId(rawChainId: unknown, fallbackChainId: number): number {
     if (typeof rawChainId === 'number' && Number.isInteger(rawChainId)) {
       return rawChainId;
@@ -181,18 +172,17 @@ export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
 
   /**
    * Discover positions for the configured Uniswap v4 pair.
-   * Uses shared inventory cache — does not issue duplicate eth_getLogs when
-   * multiple v4 adapters discover for the same wallet.
-   * REQUIRES: RPC provider with supportsLargeBlockScans=true
+   * Uses shared verified inventory and incremental discovery so multiple v4
+   * adapters do not duplicate RPC work for the same wallet.
    */
   async discover(walletAddress: string): Promise<Partial<Position>[]> {
     const config = this.getValidatedConfig();
     const checksumAddress = toChecksumAddress(walletAddress);
     const positions: Partial<Position>[] = [];
 
-    const scanProvider = this.getScanProvider(config.chainId);
-    if (!scanProvider) {
-      throw new Error(`[${this.protocolName}] No scan-capable RPC provider available`);
+    const provider = this.getChainProvider(config.chainId);
+    if (!provider) {
+      throw new Error(`[${this.protocolName}] No RPC provider available`);
     }
 
     const fromBlock = config.deployBlock ?? 21688823;
@@ -202,7 +192,8 @@ export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
         checksumAddress,
         config.positionManager,
         fromBlock,
-        scanProvider
+        provider,
+        config.chainId
       );
 
       const expectedCurrency0 = config.currency0.toLowerCase();
@@ -229,7 +220,7 @@ export class UniswapV4StablecoinRewardsAdapter extends BaseProtocolAdapter {
         let liquidity: bigint;
         try {
           ({ liquidity } = await this.getPositionInfo(
-            scanProvider,
+            provider,
             config.stateView,
             config.positionManager,
             entry.poolId,

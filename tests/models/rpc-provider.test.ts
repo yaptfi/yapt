@@ -77,6 +77,7 @@ describe('rpc-provider chain selection', () => {
       basic: { ok: true, latencyMs: 1, message: 'Connected' },
       blockScan: {
         compatible: true,
+        incrementalCompatible: true,
         conclusive: true,
         status: 'range-limited' as const,
         latencyMs: 2,
@@ -92,6 +93,7 @@ describe('rpc-provider chain selection', () => {
       basic: { ok: true, latencyMs: 1, message: 'Connected' },
       blockScan: {
         compatible: false,
+        incrementalCompatible: false,
         conclusive: false,
         status: 'failed' as const,
         latencyMs: 2,
@@ -121,6 +123,7 @@ describe('rpc-provider chain selection', () => {
       basic: { ok: true, latencyMs: 1, message: 'Connected' },
       blockScan: {
         compatible: true,
+        incrementalCompatible: true,
         conclusive: true,
         status: 'supported' as const,
         latencyMs: 2,

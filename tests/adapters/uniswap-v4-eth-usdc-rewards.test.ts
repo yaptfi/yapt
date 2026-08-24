@@ -1,6 +1,7 @@
 import { UniswapV4EthUsdcEthereumRewardsAdapter } from '../../src/adapters/uniswap-v4-eth-usdc-ethereum-rewards';
 import { UniswapV4EthUsdcArbitrumRewardsAdapter } from '../../src/adapters/uniswap-v4-eth-usdc-arbitrum-rewards';
 import protocolConfig from '../../config/protocols.json';
+import positionManagerAbi from '../../config/abis/UniswapV4PositionManager.json';
 
 const ETHEREUM_PROTOCOL_KEY = 'uniswap-v4-eth-usdc-ethereum-rewards';
 const ARBITRUM_PROTOCOL_KEY = 'uniswap-v4-eth-usdc-arbitrum-rewards';
@@ -25,7 +26,6 @@ jest.mock('../../src/utils/ethereum', () => ({
   ARBITRUM_CHAIN_ID: 42161,
   getContract: jest.fn(),
   getProviderForChain: jest.fn(),
-  getScanCapableProviderForChain: jest.fn(),
   normalizeAddress: jest.fn((address: string) => address),
   toChecksumAddress: (address: string) => address,
   formatUnits: jest.fn(),
@@ -36,11 +36,7 @@ jest.mock('../../src/utils/uniswap-v4-inventory', () => ({
 }));
 
 import { getProtocolConfig } from '../../src/utils/config';
-import {
-  getContract,
-  getProviderForChain,
-  getScanCapableProviderForChain,
-} from '../../src/utils/ethereum';
+import { getContract, getProviderForChain } from '../../src/utils/ethereum';
 import { getWalletUniswapV4Inventory } from '../../src/utils/uniswap-v4-inventory';
 
 const CONFIG = {
@@ -95,6 +91,14 @@ function createInventoryEntry(usdc: string, fee: bigint) {
 }
 
 describe('Uniswap v4 ETH/USDC protocol configuration', () => {
+  it('includes the inventory state methods required by bounded discovery', () => {
+    const functionNames = positionManagerAbi
+      .filter((fragment) => fragment.type === 'function')
+      .map((fragment) => fragment.name);
+
+    expect(functionNames).toEqual(expect.arrayContaining(['balanceOf', 'nextTokenId', 'ownerOf']));
+  });
+
   it.each([
     {
       protocolKey: ETHEREUM_PROTOCOL_KEY,
@@ -174,15 +178,14 @@ describe.each([
     jest.clearAllMocks();
     (getProtocolConfig as jest.Mock).mockReturnValue(CONFIG);
     (getProviderForChain as jest.Mock).mockReturnValue({ name: `provider-${chainId}` });
-    (getScanCapableProviderForChain as jest.Mock).mockReturnValue({ name: `scan-provider-${chainId}` });
     (getContract as jest.Mock).mockReturnValue({
       getPositionInfo: jest.fn().mockResolvedValue([2n, 0n, 0n]),
     });
   });
 
   it('discovers native ETH/USDC positions across fee tiers with claimable USDC metadata', async () => {
-    const scanProvider = { name: `scan-provider-${chainId}` };
-    (getScanCapableProviderForChain as jest.Mock).mockReturnValue(scanProvider);
+    const provider = { name: `provider-${chainId}` };
+    (getProviderForChain as jest.Mock).mockReturnValue(provider);
     (getWalletUniswapV4Inventory as jest.Mock).mockResolvedValue([
       createInventoryEntry(usdc, chainId === 1 ? 500n : 3000n),
     ]);
@@ -193,14 +196,14 @@ describe.each([
     expect(instance.protocolKey).toBe(protocolKey);
     expect(instance.protocolName).toBe(protocolName);
     expect(getProviderForChain).toHaveBeenCalledWith(chainId);
-    expect(getScanCapableProviderForChain).toHaveBeenCalledWith(chainId);
     expect(getWalletUniswapV4Inventory).toHaveBeenCalledWith(
       WALLET_ADDRESS,
       positionManager,
       deployBlock,
-      scanProvider
+      provider,
+      chainId
     );
-    expect(getContract).toHaveBeenCalledWith(stateView, [], scanProvider);
+    expect(getContract).toHaveBeenCalledWith(stateView, [], provider);
     expect(discovered).toHaveLength(1);
     expect(discovered[0]).toMatchObject({
       displayName: `${protocolName} #123`,

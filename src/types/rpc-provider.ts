@@ -24,6 +24,7 @@ export interface RPCBasicProbeResult {
 
 export interface RPCBlockScanProbeResult {
   compatible: boolean;
+  incrementalCompatible: boolean;
   conclusive: boolean;
   status: RPCBlockScanStatus;
   latencyMs: number;
