@@ -99,6 +99,7 @@ Positions have three semantic categories, derived at the service layer from the 
 - Historical scans (`queryFilter`/`getLogs`) should use `getScanCapableProviderForChain()`; do not obtain a direct underlying provider or bypass `RPCManager`.
 - Managed scan providers are rate-limited and fail over only across providers with `supportsLargeBlockScans=true`. Keep the returned scan-provider object stable so inventory caches can share work.
 - `supportsLargeBlockScans=true` means the endpoint can serve historical `eth_getLogs`; it does not mean unlimited ranges. Shared scanners must adapt provider-reported range limits.
+- Uniswap v4 inventory scans have a hard `eth_getLogs` query/time budget. Keep in-flight cache entries pinned until settlement, and do not swallow ambiguous `ownerOf` failures or raise scan budgets to accommodate narrow-range Arbitrum endpoints.
 - Managed JSON-RPC providers deliberately disable ethers batching and pin their configured network. This avoids id-less throttle responses becoming mixed-batch `BAD_DATA` errors and avoids redundant `eth_chainId` calls.
 - Configure at least two independent scan-capable providers for resilient discovery. Multiple URLs sharing one vendor project/quota are not true quota failover.
 - If no scan-capable provider is available, skip that protocol gracefully and log a warning.

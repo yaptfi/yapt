@@ -52,8 +52,9 @@ const PROBE: RPCProviderProbeResult = {
       conclusive: true,
       status: 'supported',
       latencyMs: 20,
-      testedBlockRange: 50_000,
-      message: 'Historical logs supported for at least 50,000 blocks',
+      testedBlockRange: 500_000,
+      estimatedFullScanQueries: 1,
+      message: 'Historical logs supported for at least 500,000 blocks',
     },
   },
   arbitrum: {

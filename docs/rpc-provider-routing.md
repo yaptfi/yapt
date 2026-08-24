@@ -56,8 +56,11 @@ correct per-chain value to `supportsLargeBlockScans` when it builds each chain's
 RPC manager.
 
 Do not set database scan flags manually. The admin capability probe sets them
-after it verifies the endpoint. A provider limited to 10,000 blocks remains
-eligible because both the probe and the Uniswap v4 scanner adapt to its range.
+after it verifies the endpoint. Range limits are evaluated against each chain's
+actual Position Manager history: the endpoint is scan-eligible only when a full
+inventory scan is estimated to fit within 500 log queries. A 10,000-block limit
+can therefore remain eligible on Ethereum while being rejected for Arbitrum's
+much larger block history.
 
 An endpoint that passes ordinary chain reads but cannot serve a useful
 historical-log range remains available for normal contract reads but does not
@@ -80,9 +83,11 @@ The admin page shows two different signals:
   chain checks `eth_chainId`, `eth_blockNumber`, and a real historical
   `eth_getLogs` query against the configured Uniswap v4 Position Manager.
 
-The historical probe starts at 50,000 blocks. If the endpoint reports a range
+The historical probe starts at 500,000 blocks. If the endpoint reports a range
 limit, the probe retries at that limit; otherwise it halves recognized
-range-rejection failures. Ranges of at least 10,000 blocks are considered useful.
+range-rejection failures. It records the estimated number of calls required to
+cover the chain's full relevant history and rejects endpoints requiring more
+than the scanner's 500-query budget.
 Probe records include the check time, latency, sanitized status, and detected
 range, but never the endpoint URL or API key.
 
@@ -107,17 +112,27 @@ The scanner:
 2. Reads the wallet's Position Manager `balanceOf` at that block.
 3. Returns immediately for a zero balance.
 4. Scans incoming NFT `Transfer` events newest-to-oldest.
-5. Starts with `UNISWAP_V4_SCAN_CHUNK_SIZE` (default 50,000 blocks).
+5. Starts with `UNISWAP_V4_SCAN_CHUNK_SIZE` (default 500,000 blocks).
 6. Uses a provider-reported block limit when available; otherwise halves a
    rejected range until accepted.
 7. Retries transient throttles with backoff. Error parsing must inspect nested
    ethers fields, including `error`, `info`, `data`, and `value[]`.
 8. Deduplicates token IDs and verifies `ownerOf` at the fixed latest block.
+   Transient ownership-read errors are retried; ambiguous errors abort the scan
+   instead of silently discarding the NFT and continuing through history.
 9. Stops as soon as the number of verified NFTs equals `balanceOf`.
-10. Throws an explicit mismatch if configured history is exhausted first.
+10. Stops with an explicit error after 500 `eth_getLogs` attempts or 10 minutes
+    by default, rather than walking an impractically large history forever.
+11. Throws an explicit mismatch if configured history is exhausted first.
 
-Successful inventories are cached for 60 seconds. Terminal scan failures are
-cached briefly so sibling adapters do not immediately repeat the same failure.
+In-flight inventory promises never expire, so every sibling v4 adapter joins
+the same long-running scan. Successful inventories are cached for 60 seconds
+after completion. Terminal failures are cached for five minutes to prevent the
+next adapter from immediately repeating hundreds of requests.
+
+The safety limits can be overridden deliberately with
+`UNISWAP_V4_MAX_LOG_QUERIES` and `UNISWAP_V4_SCAN_TIMEOUT_MS`. Raising them is
+usually the wrong fix; prefer a provider that accepts larger block ranges.
 
 ## Configuration
 

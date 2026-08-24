@@ -2,6 +2,11 @@ import { ethers, Provider } from 'ethers';
 import { getAbi } from './config';
 import { toChecksumAddress } from './ethereum';
 import { sleep } from './async';
+import {
+  getUniswapV4MaxLogQueries,
+  getUniswapV4ScanChunkSize,
+  getUniswapV4ScanTimeoutMs,
+} from './uniswap-v4-scan-config';
 
 export interface WalletUniswapV4Position {
   tokenId: string;
@@ -18,14 +23,23 @@ export interface WalletUniswapV4Position {
 }
 
 const INVENTORY_CACHE_TTL_MS = 60000;
-const INVENTORY_FAILURE_CACHE_TTL_MS = 5000;
-const DEFAULT_SCAN_CHUNK_SIZE = 50000;
+const INVENTORY_FAILURE_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_QUERY_ATTEMPTS = 4;
+const SCAN_PROVIDER_GUIDANCE =
+  'Configure a wider-range scan-capable RPC endpoint and retest it in Admin.';
 
 // Cache key: walletAddress:positionManagerAddress:fromBlock
 interface InventoryCacheEntry {
   expiresAtMs: number;
+  settled: boolean;
   promise: Promise<WalletUniswapV4Position[]>;
+}
+
+interface ScanBudget {
+  logQueries: number;
+  maxLogQueries: number;
+  startedAtMs: number;
+  timeoutMs: number;
 }
 
 const inventoryCache = new Map<Provider, Map<string, InventoryCacheEntry>>();
@@ -38,18 +52,29 @@ function getCacheKey(walletAddress: string, positionManagerAddress: string, from
   return `${walletAddress.toLowerCase()}:${positionManagerAddress.toLowerCase()}:${fromBlock}`;
 }
 
-function getScanChunkSize(): number {
-  const rawValue = process.env.UNISWAP_V4_SCAN_CHUNK_SIZE;
-  if (!rawValue) {
-    return DEFAULT_SCAN_CHUNK_SIZE;
+function assertScanBudget(budget: ScanBudget, fromBlock: number, toBlock: number): void {
+  const elapsedMs = Date.now() - budget.startedAtMs;
+  if (elapsedMs >= budget.timeoutMs) {
+    throw new Error(
+      `Uniswap v4 inventory scan stopped after ${budget.logQueries} log queries and ${elapsedMs}ms: ` +
+      `time budget of ${budget.timeoutMs}ms exhausted before blocks ${fromBlock}-${toBlock}. ` +
+      SCAN_PROVIDER_GUIDANCE
+    );
   }
-
-  const parsed = parseInt(rawValue, 10);
-  if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed < 1) {
-    return DEFAULT_SCAN_CHUNK_SIZE;
+  if (budget.logQueries >= budget.maxLogQueries) {
+    throw new Error(
+      `Uniswap v4 inventory scan stopped after ${budget.logQueries} log queries: ` +
+      `query budget of ${budget.maxLogQueries} exhausted before blocks ${fromBlock}-${toBlock}. ` +
+      SCAN_PROVIDER_GUIDANCE
+    );
   }
-
-  return parsed;
+  budget.logQueries += 1;
+  if (budget.logQueries === 100 && budget.maxLogQueries > 100) {
+    console.warn(
+      `[Uniswap v4] inventory scan has used 100 of ${budget.maxLogQueries} log queries; ` +
+      `it will stop automatically if the remaining NFT is not found`
+    );
+  }
 }
 
 function getErrorMessages(error: unknown): string[] {
@@ -82,6 +107,7 @@ function getErrorMessages(error: unknown): string[] {
       'message',
       'reason',
       'code',
+      'cause',
       'error',
       'info',
       'data',
@@ -161,12 +187,14 @@ async function queryFilterRange(
   positionManager: ethers.Contract,
   filter: any,
   fromBlock: number,
-  toBlock: number
+  toBlock: number,
+  budget: ScanBudget
 ): Promise<any[]> {
   let delayMs = 1000;
 
   for (let attempt = 0; attempt < MAX_QUERY_ATTEMPTS; attempt++) {
     try {
+      assertScanBudget(budget, fromBlock, toBlock);
       return await positionManager.queryFilter(filter, fromBlock, toBlock);
     } catch (error) {
       if (
@@ -183,6 +211,39 @@ async function queryFilterRange(
   }
 
   throw new Error(`Unreachable queryFilter retry exhaustion for blocks ${fromBlock}-${toBlock}`);
+}
+
+function isNonexistentTokenError(error: unknown): boolean {
+  const message = getCombinedErrorMessage(error);
+  return (
+    message.includes('nonexistent token') ||
+    message.includes('invalid token id') ||
+    message.includes('owner query for nonexistent') ||
+    message.includes('erc721nonexistenttoken')
+  );
+}
+
+async function readOwnerAtBlock(
+  positionManager: ethers.Contract,
+  tokenId: string,
+  latestBlock: number
+): Promise<string | null> {
+  let delayMs = 500;
+  for (let attempt = 0; attempt < MAX_QUERY_ATTEMPTS; attempt++) {
+    try {
+      return await positionManager.ownerOf(tokenId, { blockTag: latestBlock });
+    } catch (error) {
+      if (isNonexistentTokenError(error)) return null;
+      if (!isRetryableQueryError(error) || attempt >= MAX_QUERY_ATTEMPTS - 1) {
+        throw new Error(`Failed to verify ownerOf(${tokenId}) during Uniswap v4 inventory scan`, {
+          cause: error,
+        });
+      }
+      await sleep(delayMs);
+      delayMs = Math.min(delayMs * 2, 5000);
+    }
+  }
+  throw new Error(`Unreachable ownerOf retry exhaustion for token ${tokenId}`);
 }
 
 async function findCurrentlyOwnedTokenIds(
@@ -204,13 +265,19 @@ async function findCurrentlyOwnedTokenIds(
   let nextToBlock = latestBlock;
   let adaptedRange = false;
   let adaptationWarningEmitted = false;
+  const budget: ScanBudget = {
+    logQueries: 0,
+    maxLogQueries: getUniswapV4MaxLogQueries(),
+    startedAtMs: Date.now(),
+    timeoutMs: getUniswapV4ScanTimeoutMs(),
+  };
 
   while (nextToBlock >= fromBlock && BigInt(ownedTokenIds.length) < expectedBalance) {
     const nextFromBlock = Math.max(fromBlock, nextToBlock - chunkSize + 1);
     let chunkEvents: any[];
 
     try {
-      chunkEvents = await queryFilterRange(positionManager, filter, nextFromBlock, nextToBlock);
+      chunkEvents = await queryFilterRange(positionManager, filter, nextFromBlock, nextToBlock, budget);
     } catch (error) {
       const attemptedRangeSize = nextToBlock - nextFromBlock + 1;
       if (!isBlockRangeError(error) || attemptedRangeSize === 1) {
@@ -227,8 +294,13 @@ async function findCurrentlyOwnedTokenIds(
     }
 
     if (adaptedRange && !adaptationWarningEmitted) {
+      const estimatedFullScanQueries = Math.ceil((latestBlock - fromBlock + 1) / chunkSize);
+      const budgetWarning = estimatedFullScanQueries > budget.maxLogQueries
+        ? `; full history would require about ${estimatedFullScanQueries} queries and this scan stops after ${budget.maxLogQueries}`
+        : '';
       console.warn(
-        `[Uniswap v4] RPC block-range limit detected; reducing transfer scan chunks from ${initialChunkSize} to ${chunkSize} blocks`
+        `[Uniswap v4] RPC block-range limit detected; reducing transfer scan chunks from ` +
+        `${initialChunkSize} to ${chunkSize} blocks${budgetWarning}`
       );
       adaptationWarningEmitted = true;
     }
@@ -240,12 +312,8 @@ async function findCurrentlyOwnedTokenIds(
       }
       seenTokenIds.add(tokenId);
 
-      try {
-        const currentOwner = await positionManager.ownerOf(tokenId, { blockTag: latestBlock });
-        if (currentOwner.toLowerCase() !== walletAddress.toLowerCase()) {
-          continue;
-        }
-      } catch {
+      const currentOwner = await readOwnerAtBlock(positionManager, tokenId, latestBlock);
+      if (currentOwner === null || currentOwner.toLowerCase() !== walletAddress.toLowerCase()) {
         continue;
       }
 
@@ -261,7 +329,8 @@ async function findCurrentlyOwnedTokenIds(
   if (BigInt(ownedTokenIds.length) !== expectedBalance) {
     throw new Error(
       `Uniswap v4 inventory scan exhausted blocks ${fromBlock}-${latestBlock}: ` +
-      `found ${ownedTokenIds.length} of ${expectedBalance.toString()} NFTs reported by balanceOf`
+      `found ${ownedTokenIds.length} of ${expectedBalance.toString()} NFTs reported by balanceOf ` +
+      `after ${budget.logQueries} log queries`
     );
   }
 
@@ -278,7 +347,7 @@ async function loadWalletUniswapV4Inventory(
   const positionManagerAbi = getAbi('UniswapV4PositionManager');
   const positionManager = new ethers.Contract(positionManagerAddress, positionManagerAbi, scanProvider);
   const latestBlock = await scanProvider.getBlockNumber();
-  const chunkSize = getScanChunkSize();
+  const chunkSize = getUniswapV4ScanChunkSize();
   const expectedBalance = BigInt(await positionManager.balanceOf(checksumAddress, { blockTag: latestBlock }));
 
   if (expectedBalance === 0n) {
@@ -337,8 +406,9 @@ async function loadWalletUniswapV4Inventory(
 
 /**
  * Returns all Uniswap v4 positions currently owned by walletAddress for the given
- * positionManager. Successful results are cached for 60s and terminal failures for
- * 5s, so multiple adapters scanning the same wallet share one inventory scan.
+ * positionManager. In-flight scans never expire; successful results are cached
+ * for 60s and terminal failures for 5 minutes so sibling adapters cannot repeat
+ * an expensive scan during the same discovery run.
  */
 export async function getWalletUniswapV4Inventory(
   walletAddress: string,
@@ -354,16 +424,23 @@ export async function getWalletUniswapV4Inventory(
 
   const existing = providerCache.get(cacheKey);
   const now = Date.now();
-  if (existing && existing.expiresAtMs > now) {
+  if (existing && (!existing.settled || existing.expiresAtMs > now)) {
     return existing.promise;
   }
 
   const cacheEntry: InventoryCacheEntry = {
-    expiresAtMs: now + INVENTORY_CACHE_TTL_MS,
+    expiresAtMs: Number.POSITIVE_INFINITY,
+    settled: false,
     promise: Promise.resolve([]),
   };
   cacheEntry.promise = loadWalletUniswapV4Inventory(checksumAddress, positionManagerAddress, fromBlock, scanProvider)
+    .then((inventory) => {
+      cacheEntry.settled = true;
+      cacheEntry.expiresAtMs = Date.now() + INVENTORY_CACHE_TTL_MS;
+      return inventory;
+    })
     .catch((error) => {
+      cacheEntry.settled = true;
       cacheEntry.expiresAtMs = Date.now() + INVENTORY_FAILURE_CACHE_TTL_MS;
       throw error;
     });

@@ -15,8 +15,15 @@ function rpcError(code: number, message: string, status = 200): Response {
 }
 
 describe('RPC provider capability probe', () => {
+  beforeEach(() => {
+    delete process.env.UNISWAP_V4_SCAN_CHUNK_SIZE;
+    delete process.env.UNISWAP_V4_MAX_LOG_QUERIES;
+  });
+
   afterEach(() => {
     jest.restoreAllMocks();
+    delete process.env.UNISWAP_V4_SCAN_CHUNK_SIZE;
+    delete process.env.UNISWAP_V4_MAX_LOG_QUERIES;
   });
 
   it('detects a provider that accepts the full historical scan range', async () => {
@@ -32,7 +39,7 @@ describe('RPC provider capability probe', () => {
       compatible: true,
       conclusive: true,
       status: 'supported',
-      testedBlockRange: 50_000,
+      testedBlockRange: 500_000,
     });
     const logRequest = JSON.parse(String(fetchSpy.mock.calls[2]?.[1]?.body));
     expect(logRequest.method).toBe('eth_getLogs');
@@ -42,7 +49,7 @@ describe('RPC provider capability probe', () => {
     });
   });
 
-  it('accepts and records a reported 10,000-block range limit after retrying it', async () => {
+  it('rejects an Arbitrum endpoint whose range limit would require thousands of calls', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce(rpcResult('0xa4b1'))
       .mockResolvedValueOnce(rpcResult('0x1dadbe44'))
@@ -53,15 +60,34 @@ describe('RPC provider capability probe', () => {
 
     expect(result.basic.ok).toBe(true);
     expect(result.blockScan).toMatchObject({
-      compatible: true,
+      compatible: false,
       conclusive: true,
-      status: 'range-limited',
+      status: 'unsupported',
       testedBlockRange: 10_000,
       maxBlockRange: 10_000,
+      estimatedFullScanQueries: 20_009,
     });
     const retryRequest = JSON.parse(String(fetchSpy.mock.calls[3]?.[1]?.body));
     const retryFilter = retryRequest.params[0];
     expect(parseInt(retryFilter.toBlock, 16) - parseInt(retryFilter.fromBlock, 16) + 1).toBe(10_000);
+  });
+
+  it('still accepts a 10,000-block limit when the chain history fits the call budget', async () => {
+    jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(rpcResult('0x1'))
+      .mockResolvedValueOnce(rpcResult('0x1500000'))
+      .mockResolvedValueOnce(rpcError(-32602, 'range exceeds limit of 10000'))
+      .mockResolvedValueOnce(rpcResult([]));
+
+    const result = await probeRPCChain('https://provider.example/ethereum-key', 1);
+
+    expect(result.blockScan).toMatchObject({
+      compatible: true,
+      conclusive: true,
+      status: 'range-limited',
+      testedBlockRange: 10_000,
+      estimatedFullScanQueries: 34,
+    });
   });
 
   it('reports a wrong-chain URL without attempting historical logs', async () => {

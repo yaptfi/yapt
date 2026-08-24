@@ -6,10 +6,13 @@ import {
   RPCProbeErrorCategory,
   RPCProviderProbeResult,
 } from '../types/rpc-provider';
+import {
+  getUniswapV4MaxLogQueries,
+  getUniswapV4ScanChunkSize,
+} from '../utils/uniswap-v4-scan-config';
 
 const ETHEREUM_CHAIN_ID = 1;
 const ARBITRUM_CHAIN_ID = 42161;
-const INITIAL_SCAN_RANGE = 50_000;
 const MINIMUM_USEFUL_SCAN_RANGE = 10_000;
 const PROBE_TIMEOUT_MS = 8_000;
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
@@ -246,10 +249,15 @@ async function probeBasic(url: string, target: ProbeTarget): Promise<RPCBasicPro
   }
 }
 
-async function probeBlockScan(url: string, target: ProbeTarget): Promise<RPCBlockScanProbeResult> {
+async function probeBlockScan(
+  url: string,
+  target: ProbeTarget,
+  latestBlock: number
+): Promise<RPCBlockScanProbeResult> {
   const startedAtMs = Date.now();
   const { address, fromBlock } = getProbeTargetConfig(target);
-  let range = INITIAL_SCAN_RANGE;
+  let range = getUniswapV4ScanChunkSize();
+  const maxEstimatedFullScanQueries = getUniswapV4MaxLogQueries();
   let adapted = false;
   let usedReportedLimit = false;
 
@@ -265,6 +273,23 @@ async function probeBlockScan(url: string, target: ProbeTarget): Promise<RPCBloc
         throw new RPCProbeRequestError('eth_getLogs returned a non-array result', 'invalid-response');
       }
 
+      const historyBlocks = Math.max(0, latestBlock - fromBlock + 1);
+      const estimatedFullScanQueries = Math.ceil(historyBlocks / range);
+      if (estimatedFullScanQueries > maxEstimatedFullScanQueries) {
+        return {
+          compatible: false,
+          conclusive: true,
+          status: 'unsupported',
+          latencyMs: Date.now() - startedAtMs,
+          testedBlockRange: range,
+          maxBlockRange: range,
+          estimatedFullScanQueries,
+          message:
+            `Historical logs work at ${range.toLocaleString()} blocks, but a full discovery would require ` +
+            `about ${estimatedFullScanQueries.toLocaleString()} queries (maximum ${maxEstimatedFullScanQueries.toLocaleString()})`,
+        };
+      }
+
       return {
         compatible: true,
         conclusive: true,
@@ -272,6 +297,7 @@ async function probeBlockScan(url: string, target: ProbeTarget): Promise<RPCBloc
         latencyMs: Date.now() - startedAtMs,
         testedBlockRange: range,
         maxBlockRange: adapted ? range : undefined,
+        estimatedFullScanQueries,
         message: adapted
           ? usedReportedLimit
             ? `Historical logs supported with a ${range.toLocaleString()}-block range limit`
@@ -327,7 +353,7 @@ export async function probeRPCChain(url: string, chainId: number): Promise<RPCCh
   const basic = await probeBasic(normalizedUrl, target);
   const basicFailureIsConclusive = !basic.ok && !isTransientErrorCategory(basic.errorCategory);
   const blockScan = basic.ok
-    ? await probeBlockScan(normalizedUrl, target)
+    ? await probeBlockScan(normalizedUrl, target, basic.blockNumber as number)
     : {
         compatible: false,
         conclusive: basicFailureIsConclusive,
@@ -338,6 +364,7 @@ export async function probeRPCChain(url: string, chainId: number): Promise<RPCCh
       };
 
   return {
+    probeVersion: 2,
     chainId,
     chainName: target.chainName,
     checkedAt: new Date().toISOString(),

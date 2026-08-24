@@ -667,7 +667,7 @@
     }
 
     function probeIsStale(probe) {
-      if (!probe?.checkedAt) return true;
+      if (!probe?.checkedAt || (probe.probeVersion ?? 0) < 2) return true;
       const checkedAtMs = new Date(probe.checkedAt).getTime();
       return !Number.isFinite(checkedAtMs) || Date.now() - checkedAtMs > RPC_PROBE_MAX_AGE_MS;
     }

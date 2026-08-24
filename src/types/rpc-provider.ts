@@ -29,11 +29,13 @@ export interface RPCBlockScanProbeResult {
   latencyMs: number;
   testedBlockRange?: number;
   maxBlockRange?: number;
+  estimatedFullScanQueries?: number;
   errorCategory?: RPCProbeErrorCategory;
   message: string;
 }
 
 export interface RPCChainProbeResult {
+  probeVersion?: number;
   chainId: number;
   chainName: string;
   checkedAt: string;

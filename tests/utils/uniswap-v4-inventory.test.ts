@@ -76,6 +76,12 @@ describe('uniswap-v4 inventory', () => {
     };
 
     delete process.env.UNISWAP_V4_SCAN_CHUNK_SIZE;
+    delete process.env.UNISWAP_V4_MAX_LOG_QUERIES;
+    delete process.env.UNISWAP_V4_SCAN_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('uses a nested RPC range limit and scans backward in 10,000-block chunks', async () => {
@@ -118,6 +124,30 @@ describe('uniswap-v4 inventory', () => {
     expect(inventory.map((entry) => entry.tokenId)).toEqual(['1']);
     expect(warningSpy).toHaveBeenCalledTimes(1);
     expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining('10000 blocks'));
+  });
+
+  it('warns when an adapted range cannot cover full history within the query budget', async () => {
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(6_000_000),
+    } as any;
+    const warningSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockContract.queryFilter
+      .mockRejectedValueOnce({
+        error: { code: -32602, message: 'range exceeds limit of 10000' },
+      })
+      .mockResolvedValueOnce([{ args: { tokenId: 1n } }]);
+
+    await getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    );
+
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledWith(
+      expect.stringContaining('full history would require about 600 queries and this scan stops after 500')
+    );
   });
 
   it('checks newest transfers first and stops once balanceOf NFTs are verified', async () => {
@@ -223,6 +253,49 @@ describe('uniswap-v4 inventory', () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 2000);
   });
 
+  it('retries transient ownerOf failures instead of silently losing the candidate NFT', async () => {
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(50),
+    } as any;
+    const rateLimitError = {
+      code: -32005,
+      message: 'Too Many Requests',
+    };
+    mockContract.ownerOf
+      .mockRejectedValueOnce(rateLimitError)
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce(WALLET_ADDRESS);
+
+    const inventory = await getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    );
+
+    expect(inventory.map((entry) => entry.tokenId)).toEqual(['1']);
+    expect(mockContract.ownerOf).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenNthCalledWith(1, 500);
+    expect(sleep).toHaveBeenNthCalledWith(2, 1000);
+  });
+
+  it('stops immediately when ownerOf fails ambiguously instead of scanning older history', async () => {
+    process.env.UNISWAP_V4_SCAN_CHUNK_SIZE = '100';
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(200),
+    } as any;
+    mockContract.ownerOf.mockRejectedValue(new Error('missing revert data'));
+
+    await expect(getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    )).rejects.toThrow('Failed to verify ownerOf(1)');
+
+    expect(mockContract.queryFilter).toHaveBeenCalledTimes(1);
+  });
+
   it('retries Infura rate limits nested in an ethers BAD_DATA batch response', async () => {
     const provider = {
       getBlockNumber: jest.fn().mockResolvedValue(42161),
@@ -280,7 +353,9 @@ describe('uniswap-v4 inventory', () => {
     expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining('50 blocks'));
   });
 
-  it('throws and briefly caches a terminal history mismatch', async () => {
+  it('caches a terminal history mismatch long enough for sibling adapters to reuse it', async () => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
     process.env.UNISWAP_V4_SCAN_CHUNK_SIZE = '100';
     const provider = {
       getBlockNumber: jest.fn().mockResolvedValue(120),
@@ -298,6 +373,7 @@ describe('uniswap-v4 inventory', () => {
       1,
       provider
     )).rejects.toThrow(expectedMessage);
+    now += 120_000;
     await expect(getWalletUniswapV4Inventory(
       WALLET_ADDRESS,
       POSITION_MANAGER_ADDRESS,
@@ -308,5 +384,83 @@ describe('uniswap-v4 inventory', () => {
     expect(mockContract.balanceOf).toHaveBeenCalledTimes(1);
     expect(mockContract.queryFilter).toHaveBeenCalledTimes(2);
     expect(mockContract.getPoolAndPositionInfo).not.toHaveBeenCalled();
+  });
+
+  it('stops at the configured log-query budget', async () => {
+    process.env.UNISWAP_V4_SCAN_CHUNK_SIZE = '100';
+    process.env.UNISWAP_V4_MAX_LOG_QUERIES = '2';
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(500),
+    } as any;
+    mockContract.queryFilter.mockResolvedValue([]);
+
+    await expect(getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    )).rejects.toThrow('query budget of 2 exhausted');
+
+    expect(mockContract.queryFilter).toHaveBeenCalledTimes(2);
+    expect(mockContract.queryFilter.mock.calls.map(([, fromBlock, toBlock]) => [fromBlock, toBlock]))
+      .toEqual([[401, 500], [301, 400]]);
+  });
+
+  it('stops at the configured elapsed-time budget between log queries', async () => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    process.env.UNISWAP_V4_SCAN_CHUNK_SIZE = '100';
+    process.env.UNISWAP_V4_SCAN_TIMEOUT_MS = '1';
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(500),
+    } as any;
+    mockContract.queryFilter.mockImplementation(async () => {
+      now += 2;
+      return [];
+    });
+
+    await expect(getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    )).rejects.toThrow('time budget of 1ms exhausted');
+
+    expect(mockContract.queryFilter).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares a still-running scan even after its normal success TTL would have elapsed', async () => {
+    let now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(50),
+    } as any;
+    let resolveLogs: ((logs: Array<{ args: { tokenId: bigint } }>) => void) | undefined;
+    mockContract.queryFilter.mockImplementation(() => new Promise((resolve) => {
+      resolveLogs = resolve;
+    }));
+
+    const firstInventory = getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    now += 120_000;
+    const secondInventory = getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider
+    );
+    resolveLogs?.([{ args: { tokenId: 1n } }]);
+
+    const [first, second] = await Promise.all([firstInventory, secondInventory]);
+    expect(first.map((entry) => entry.tokenId)).toEqual(['1']);
+    expect(second.map((entry) => entry.tokenId)).toEqual(['1']);
+    expect(mockContract.balanceOf).toHaveBeenCalledTimes(1);
+    expect(mockContract.queryFilter).toHaveBeenCalledTimes(1);
   });
 });
