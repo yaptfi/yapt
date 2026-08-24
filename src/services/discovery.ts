@@ -716,12 +716,9 @@ async function discoverPositionsCore(
       type: 'complete',
       data: {
         totalPositions: discoveredPositions.length,
-        failedProtocols: taskResults
-          .filter((result) => result.errorMessage !== undefined)
-          .map((result) => ({
-            protocol: result.protocolName,
-            message: result.errorMessage!,
-          })),
+        failedProtocols: taskResults.flatMap((result) => result.errorMessage === undefined
+          ? []
+          : [{ protocol: result.protocolName, message: result.errorMessage }]),
       },
     });
   } else {

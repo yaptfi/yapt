@@ -174,7 +174,7 @@ export class UniswapV4Adapter extends BaseProtocolAdapter {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Uniswap v4 inventory scan failed: ${message}`);
+      throw new Error(`Uniswap v4 inventory scan failed: ${message}`, { cause: error });
     }
 
     return positions;

@@ -160,7 +160,7 @@ once for that inventory scan and must not include an RPC URL or credentials.
 2. Lower `callsPerSecond` for the throttled endpoint.
 3. Check its daily/project credit usage.
 4. Confirm at least one independent backup has an Arbitrum URL (when relevant),
-   is active, and has Historical Block Scans enabled.
+   is active, and has **Use for Historical Scans** enabled.
 5. Inspect provider health in the admin UI, then rescan after configuration is
    reloaded.
 

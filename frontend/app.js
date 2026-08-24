@@ -28,6 +28,7 @@ async function consumeDiscoveryStream(response, statusText, positionsContainer) 
   const decoder = new TextDecoder();
   let buffer = '';
   let completed = false;
+  let completionData = null;
   let streamError = null;
 
   while (true) {
@@ -47,7 +48,10 @@ async function consumeDiscoveryStream(response, statusText, positionsContainer) 
           throw new Error('The server sent an invalid discovery progress update');
         }
         handleDiscoveryEvent(event, statusText, positionsContainer);
-        if (event.type === 'complete') completed = true;
+        if (event.type === 'complete') {
+          completed = true;
+          completionData = event.data;
+        }
         if (event.type === 'error') streamError = event.data?.message || 'Discovery failed';
       }
     }
@@ -59,6 +63,8 @@ async function consumeDiscoveryStream(response, statusText, positionsContainer) 
   if (!completed) {
     throw new Error('The discovery connection closed before the scan completed');
   }
+
+  return completionData;
 }
 
 // Wallet selection management
@@ -477,14 +483,20 @@ async function scanWallet(walletId, walletAddress, btnEl) {
     }
 
     // Handle SSE stream
-    await consumeDiscoveryStream(response, statusText, positionsContainer);
+    const completion = await consumeDiscoveryStream(response, statusText, positionsContainer);
 
-    // Discovery complete - refresh data and close modal
-    setTimeout(async () => {
+    // Keep protocol failures visible until the user closes the modal. Successful
+    // scans retain the existing brief completion message before closing.
+    if ((completion?.failedProtocols?.length || 0) > 0) {
       await loadPositions();
       await loadPortfolioSummary();
-      closeRescanModal();
-    }, 1500);
+    } else {
+      setTimeout(async () => {
+        await loadPositions();
+        await loadPortfolioSummary();
+        closeRescanModal();
+      }, 1500);
+    }
 
   } catch (error) {
     const message = error.name === 'AbortError'
