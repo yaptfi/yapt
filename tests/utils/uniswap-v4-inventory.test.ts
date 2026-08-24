@@ -223,6 +223,44 @@ describe('uniswap-v4 inventory', () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 2000);
   });
 
+  it('retries Infura rate limits nested in an ethers BAD_DATA batch response', async () => {
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(42161),
+    } as any;
+    const batchRateLimitError = {
+      code: 'BAD_DATA',
+      value: [
+        { jsonrpc: '2.0', id: 37, result: '0xa4b1' },
+        {
+          code: -32005,
+          message: 'Too Many Requests',
+          data: { see: 'https://infura.io/dashboard' },
+        },
+      ],
+      info: {
+        payload: {
+          id: 38,
+          jsonrpc: '2.0',
+          method: 'eth_getLogs',
+          params: [],
+        },
+      },
+      shortMessage: 'missing response for request',
+    };
+
+    mockContract.queryFilter
+      .mockRejectedValueOnce(batchRateLimitError)
+      .mockResolvedValueOnce([{ args: { tokenId: 1n } }]);
+
+    await getWalletUniswapV4Inventory(WALLET_ADDRESS, POSITION_MANAGER_ADDRESS, 1, provider);
+
+    expect(mockContract.queryFilter).toHaveBeenCalledTimes(2);
+    expect(mockContract.queryFilter).toHaveBeenNthCalledWith(1, {}, 1, 42161);
+    expect(mockContract.queryFilter).toHaveBeenNthCalledWith(2, {}, 1, 42161);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
   it('halves a rejected range when the provider does not report its limit', async () => {
     process.env.UNISWAP_V4_SCAN_CHUNK_SIZE = '100';
     const provider = {

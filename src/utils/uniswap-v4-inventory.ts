@@ -77,7 +77,18 @@ function getErrorMessages(error: unknown): string[] {
     }
 
     const record = value as Record<string, unknown>;
-    for (const key of ['shortMessage', 'message', 'reason', 'error', 'info', 'data', 'body']) {
+    for (const key of [
+      'shortMessage',
+      'message',
+      'reason',
+      'code',
+      'error',
+      'info',
+      'data',
+      'body',
+      'value',
+      'response',
+    ]) {
       visit(record[key], depth + 1);
     }
   };
