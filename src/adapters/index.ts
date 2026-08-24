@@ -12,6 +12,8 @@ import { UniswapV4Adapter } from './uniswap-v4';
 import { UniswapV3WbtcUsdtArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdt-arbitrum-rewards';
 import { UniswapV3WbtcUsdcArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdc-arbitrum-rewards';
 import { UniswapV4WbtcUsdcRewardsAdapter } from './uniswap-v4-wbtc-usdc-rewards';
+import { UniswapV4EthUsdcEthereumRewardsAdapter } from './uniswap-v4-eth-usdc-ethereum-rewards';
+import { UniswapV4EthUsdcArbitrumRewardsAdapter } from './uniswap-v4-eth-usdc-arbitrum-rewards';
 import { UniswapV3WethUsdcArbitrumRewardsAdapter } from './uniswap-v3-weth-usdc-arbitrum-rewards';
 import { UniswapV3PaxgUsdcEthereumRewardsAdapter } from './uniswap-v3-paxg-usdc-ethereum-rewards';
 import { UniswapV3WethUsdcEthereumRewardsAdapter } from './uniswap-v3-weth-usdc-ethereum-rewards';
@@ -52,6 +54,8 @@ export {
   UniswapV3WbtcUsdtArbitrumRewardsAdapter,
   UniswapV3WbtcUsdcArbitrumRewardsAdapter,
   UniswapV4WbtcUsdcRewardsAdapter,
+  UniswapV4EthUsdcEthereumRewardsAdapter,
+  UniswapV4EthUsdcArbitrumRewardsAdapter,
   UniswapV3WethUsdcArbitrumRewardsAdapter,
   UniswapV3PaxgUsdcEthereumRewardsAdapter,
   UniswapV3WethUsdcEthereumRewardsAdapter,

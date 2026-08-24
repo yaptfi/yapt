@@ -101,7 +101,7 @@ See `CLAUDE.md` for detailed development setup and architecture documentation.
 - **Convex**: cvxCRV staking (rewards-only)
 
 ### Liquidity Provision
-- **Uniswap v4**: USDC/USDT 0.001% pool (NFT-based LP positions with fee tracking)
+- **Uniswap v4**: Ethereum ETH/USDC and USDC/USDT; Arbitrum ETH/USDC and WBTC/USDC (NFT-based LP positions with stablecoin fee tracking)
 
 ## Authentication
 

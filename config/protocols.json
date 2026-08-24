@@ -421,6 +421,52 @@
     ],
     "deployBlock": 297842893
   },
+  "uniswap-v4-eth-usdc-ethereum-rewards": {
+    "name": "Uniswap v4 ETH/USDC (Ethereum)",
+    "chainId": 1,
+    "positionManager": "0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e",
+    "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+    "stateView": "0x7ffe42c4a5deea5b0fec41c94c136cf115597227",
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "currency0Symbol": "ETH",
+    "currency1Symbol": "USDC",
+    "currency0Decimals": 18,
+    "currency1Decimals": 6,
+    "rewardToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "rewardDecimals": 6,
+    "baseAsset": "USDC",
+    "type": "lp-position",
+    "countingMode": "partial",
+    "abiKeys": [
+      "UniswapV4PositionManager",
+      "UniswapV4StateView"
+    ],
+    "deployBlock": 21688823
+  },
+  "uniswap-v4-eth-usdc-arbitrum-rewards": {
+    "name": "Uniswap v4 ETH/USDC (Arbitrum)",
+    "chainId": 42161,
+    "positionManager": "0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869",
+    "poolManager": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
+    "stateView": "0x76fd297e2d437cd7f76d50f01afe6160f86e9990",
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "currency0Symbol": "ETH",
+    "currency1Symbol": "USDC",
+    "currency0Decimals": 18,
+    "currency1Decimals": 6,
+    "rewardToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "rewardDecimals": 6,
+    "baseAsset": "USDC",
+    "type": "lp-position",
+    "countingMode": "partial",
+    "abiKeys": [
+      "UniswapV4PositionManager",
+      "UniswapV4StateView"
+    ],
+    "deployBlock": 297842893
+  },
   "aave-umbrella-usdt": {
     "name": "Aave Umbrella Staked USDT",
     "stakeToken": "0xA484Ab92fe32B143AEE7019fC1502b1dAA522D31",

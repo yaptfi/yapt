@@ -553,7 +553,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
   let apy7d = null;
   let apy30d = null;
   const cachedProjection = getCachedFutureIncomeProjection(position);
-  let shouldProjectFutureIncome = cachedProjection ?? true;
+  const shouldProjectFutureIncome = cachedProjection ?? true;
 
   const isFixedIncome = getPositionCategory(position?.measureMethod ?? '') === 'fixed-income';
 
