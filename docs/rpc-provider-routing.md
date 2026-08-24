@@ -2,11 +2,13 @@
 
 ## Overview
 
-The RPC manager now supports **provider-specific routing** to handle different RPC provider capabilities. This solves the problem of some providers (like Alchemy free tier) having restrictive limits on `eth_getLogs` block ranges while others (like Infura) support large scans.
+The RPC manager supports **provider-specific routing** for historical
+`eth_getLogs` calls. Providers may impose different block-range, throughput,
+and daily-credit limits, so discovery adapts its range and can fail over.
 
 ## The Problem
 
-**Alchemy Free Tier Limitation:**
+**Example provider limitation:**
 ```
 Error: Under the Free tier plan, you can make eth_getLogs requests with
 up to a 10 block range.
@@ -15,8 +17,8 @@ up to a 10 block range.
 **Why This Matters:**
 - Uniswap v4 adapter needs to scan Transfer events to find NFT positions
 - Historical scans may need to cover 100k+ blocks
-- With 10 block limit: scanning 100k blocks = 10,000 requests
-- Alchemy free tier can't handle this, but Infura can
+- With a 10 block limit: scanning 100k blocks = 10,000 requests
+- Range adaptation alone does not solve throughput or daily-credit exhaustion
 
 ## Solution: Capability-Based Routing
 
@@ -37,17 +39,10 @@ interface RPCProviderConfig {
 }
 ```
 
-**When to set to `false`:**
-- Alchemy free tier (10 block limit)
-- GetBlock.io free tier (2,000 block limit)
-- Any provider with < 10,000 block range limits
-
-**When to set to `true`:**
-- Infura (supports 100k+ blocks) - **Recommended for Uniswap discovery**
-- QuickNode (enterprise tier)
-- Ankr
-- Self-hosted nodes
-- Most paid RPC services with generous limits
+Set the flag to `true` when the endpoint supports historical `eth_getLogs`.
+The scanner automatically reduces rejected ranges, including 10,000-block
+limits. Set it to `false` only when the endpoint cannot reliably serve
+historical logs; those providers remain available for normal contract reads.
 
 ### 2. Database Schema
 
@@ -62,28 +57,17 @@ ALTER TABLE rpc_provider
 
 ### 3. RPC Manager API
 
-New method to get scan-capable provider:
+Scan calls use a dedicated managed queue:
 
 ```typescript
 class RPCManager {
-  /**
-   * Get a provider that supports large block scans
-   * Returns direct ethers provider (not proxied through queue)
-   */
-  getScanCapableProvider(): ethers.JsonRpcProvider | null {
-    const scanCapableProviders = this.providers.filter(
-      state => state.config.supportsLargeBlockScans === true && state.isHealthy
-    );
-
-    if (scanCapableProviders.length === 0) {
-      return null; // No scan-capable providers available
-    }
-
-    // Return highest priority scan-capable provider
-    return scanCapableProviders[0].provider;
-  }
+  sendScan(method: string, params: unknown[]): Promise<unknown>;
+  hasScanCapableProviders(): boolean;
 }
 ```
+
+`sendScan()` uses only providers with `supportsLargeBlockScans=true`, while
+retaining token-bucket pacing, health tracking, and automatic failover.
 
 ### 4. Adapter Usage
 
@@ -91,18 +75,10 @@ Uniswap v4 adapter now uses scan-capable provider:
 
 ```typescript
 async discover(walletAddress: string): Promise<Partial<Position>[]> {
-  // Get scan-capable provider
-  const proxyProvider = getProvider();
-  let scanProvider;
-
-  if ('getRPCManager' in proxyProvider) {
-    const manager = proxyProvider.getRPCManager();
-    scanProvider = manager.getScanCapableProvider();
-
-    if (!scanProvider) {
-      console.warn('[Uniswap v4] No scan-capable RPC provider available');
-      return []; // Skip Uniswap discovery
-    }
+  const scanProvider = getScanCapableProviderForChain(config.chainId);
+  if (!scanProvider) {
+    console.warn('[Uniswap v4] No scan-capable RPC provider available');
+    return [];
   }
 
   // Use scan-capable provider for event queries
@@ -112,9 +88,8 @@ async discover(walletAddress: string): Promise<Partial<Position>[]> {
     scanProvider // <-- Uses scan-capable provider
   );
 
-  // Query historical Transfer events (may scan millions of blocks)
-  const receivedEvents = await positionManager.queryFilter(transferFilter);
-  const sentEvents = await positionManager.queryFilter(sentFilter);
+  // The shared inventory scanner walks backward in adaptive chunks.
+  const inventory = await getWalletUniswapV4Inventory(/* ... */);
 
   // ... rest of discovery logic
 }
@@ -155,8 +130,10 @@ Shows capability status:
 
 **Routed ONLY to scan-capable providers**:
 - Filters to providers with `supportsLargeBlockScans=true`
-- Uses highest priority scan-capable provider
-- **No automatic failover** (direct provider access, not queued)
+- Uses the RPC manager's token-bucket pacing
+- Load balances and fails over across all healthy scan-capable providers
+- Disables ethers request batching to isolate provider throttle responses
+- Pins the configured chain to avoid redundant `eth_chainId` probes
 
 ### Graceful Degradation
 
@@ -199,7 +176,10 @@ if (!scanProvider) {
 
 **Result:**
 - Normal calls (99% of requests) → Load balanced, Alchemy preferred (higher priority)
-- Block scans (1% of requests) → Only Infura used (scan-capable)
+- Block scans (1% of requests) → Only Infura used because it is the only provider marked scan-capable
+
+To provide scan failover, configure at least two independent providers with
+`supportsLargeBlockScans=true` and conservative `callsPerSecond` values.
 
 ### Single Provider Setup
 
@@ -219,25 +199,28 @@ If you only have one provider, the system degrades gracefully:
 
 1. **`src/utils/rpc-manager.ts`**
    - Added `supportsLargeBlockScans` to `RPCProviderConfig`
-   - Added `getScanCapableProvider()` method
+   - Added rate-limited, failover-aware `sendScan()` routing
 
-2. **`src/models/rpc-provider.ts`**
+2. **`src/utils/rpc-proxy-provider.ts`**
+   - Added a stable scan-only provider view backed by the RPC manager
+
+3. **`src/models/rpc-provider.ts`**
    - Updated database row type to include `supports_large_block_scans`
    - Updated all SQL queries to include the column
    - Updated `createRPCProvider()` to handle the flag (defaults to `true`)
    - Updated `updateRPCProvider()` to allow updating the flag
 
-3. **`src/adapters/uniswap-v4.ts`**
+4. **`src/adapters/uniswap-v4.ts`**
    - Updated `discover()` to use scan-capable provider for event queries
    - Added fallback to regular provider for single-provider setups
    - Added warning logs when no scan-capable providers available
 
-4. **`frontend/admin.html`**
+5. **`frontend/admin.html`**
    - Added "Supports Large Block Scans" checkbox to add provider form
    - Added "Capabilities" column to provider table showing scan support status
    - Updated JavaScript to include `supportsLargeBlockScans` in form submission
 
-5. **`migrations/1733000030000_add-rpc-supports-large-block-scans.js`**
+6. **`migrations/1733000030000_add-rpc-supports-large-block-scans.js`**
    - New migration adding `supports_large_block_scans` column
    - Defaults to `true` for backwards compatibility
 
@@ -325,7 +308,8 @@ To verify the routing is working:
 
 ### Uniswap positions not discovered
 
-**Cause:** No scan-capable providers available
+**Cause:** No scan-capable providers are configured, or all configured scan
+providers are temporarily unhealthy or quota-limited.
 
 **Solution:**
 - Uniswap requires historical event scanning
@@ -339,4 +323,5 @@ To verify the routing is working:
 2. Are other providers unhealthy?
 3. For scans: Is only one provider scan-capable?
 
-**This is expected behavior** for scan operations - they ONLY use scan-capable providers.
+Scan operations only use scan-capable providers. Configure at least two such
+providers if discovery must continue through a single-provider outage or throttle.

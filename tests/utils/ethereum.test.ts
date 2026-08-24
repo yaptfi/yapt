@@ -23,13 +23,21 @@ describe('ethereum RPC environment capabilities', () => {
   });
 
   it('treats env-configured providers as scan-capable by default', async () => {
-    const { ETHEREUM_CHAIN_ID, getProviderForChain, initializeRPCProviders } = await import('../../src/utils/ethereum');
+    const {
+      ETHEREUM_CHAIN_ID,
+      getProviderForChain,
+      getScanCapableProviderForChain,
+      initializeRPCProviders,
+    } = await import('../../src/utils/ethereum');
 
     await initializeRPCProviders();
 
     const provider = getProviderForChain(ETHEREUM_CHAIN_ID) as any;
     expect(typeof provider.getRPCManager).toBe('function');
-    expect(provider.getRPCManager().getScanCapableProvider()).not.toBeNull();
+    expect(provider.getRPCManager().hasScanCapableProviders()).toBe(true);
+    const scanProvider = getScanCapableProviderForChain(ETHEREUM_CHAIN_ID);
+    expect(scanProvider).not.toBe(provider);
+    expect(scanProvider).toBe(getScanCapableProviderForChain(ETHEREUM_CHAIN_ID));
   });
 
   it('supports opting env-configured providers out of large block scans', async () => {
@@ -41,7 +49,7 @@ describe('ethereum RPC environment capabilities', () => {
 
     const provider = getProviderForChain(ETHEREUM_CHAIN_ID) as any;
     expect(typeof provider.getRPCManager).toBe('function');
-    expect(provider.getRPCManager().getScanCapableProvider()).toBeNull();
+    expect(provider.getRPCManager().hasScanCapableProviders()).toBe(false);
   });
 
   it('normalizes trusted addresses even when the input checksum casing is wrong', async () => {

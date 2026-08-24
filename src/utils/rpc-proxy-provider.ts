@@ -12,14 +12,19 @@ import { RPCManager } from './rpc-manager';
  */
 export class RPCProxyProvider extends JsonRpcProvider {
   private rpcManager: RPCManager;
+  private readonly configuredNetwork?: Network;
+  private readonly scanOnly: boolean;
+  private scanProvider?: RPCProxyProvider;
 
-  constructor(rpcManager: RPCManager, network?: Network) {
+  constructor(rpcManager: RPCManager, network?: Network, scanOnly = false) {
     // Use the first provider's URL for the parent class
     // This allows ethers' internal network detection to work
     // IMPORTANT: Use getConfigs() not getStatus() - getStatus() truncates URLs for display
     const firstProviderUrl = rpcManager.getConfigs()[0]?.url || 'http://localhost';
-    super(firstProviderUrl, network);
+    super(firstProviderUrl, network, { batchMaxCount: 1 });
     this.rpcManager = rpcManager;
+    this.configuredNetwork = network;
+    this.scanOnly = scanOnly;
   }
 
   /**
@@ -28,7 +33,24 @@ export class RPCProxyProvider extends JsonRpcProvider {
    */
   override async send(method: string, params: Array<any> | Record<string, any>): Promise<any> {
     const paramsArray = Array.isArray(params) ? params : [params];
-    return await this.rpcManager.send(method, paramsArray);
+    return this.scanOnly
+      ? await this.rpcManager.sendScan(method, paramsArray)
+      : await this.rpcManager.send(method, paramsArray);
+  }
+
+  /**
+   * Return a stable provider view that routes every call only through
+   * scan-capable managed providers.
+   */
+  getScanCapableProvider(): RPCProxyProvider | null {
+    if (!this.rpcManager.hasScanCapableProviders()) {
+      return null;
+    }
+
+    if (!this.scanProvider) {
+      this.scanProvider = new RPCProxyProvider(this.rpcManager, this.configuredNetwork, true);
+    }
+    return this.scanProvider;
   }
 
   /**
@@ -84,6 +106,7 @@ export function createManagedProvider(
   const rpcManager = new RPCManager(configs, {
     maxQueueSize: options?.maxQueueSize,
     maxConcurrency: options?.maxConcurrency,
+    network: options?.network,
   });
 
   return new RPCProxyProvider(rpcManager, options?.network);

@@ -209,7 +209,7 @@ async function initializeProviderForChain(chainId: number): Promise<Provider> {
       const dbProviders = await getActiveRPCProvidersForChain(chainId);
       if (dbProviders.length > 0) {
         console.log(`[${chainLabel}] Initialized with ${dbProviders.length} RPC provider(s) from database`);
-        return createManagedProvider(dbProviders);
+        return createManagedProvider(dbProviders, { network: ethers.Network.from(chainId) });
       }
     }
   } catch {
@@ -231,7 +231,7 @@ async function initializeProviderForChain(chainId: number): Promise<Provider> {
     }));
 
     console.log(`[${chainLabel}] Initialized with ${configs.length} RPC provider(s) from environment`);
-    return createManagedProvider(configs);
+    return createManagedProvider(configs, { network: ethers.Network.from(chainId) });
   }
 
   const singleUrl = getSingleProviderUrlFromEnv(chainId);
@@ -251,7 +251,7 @@ async function initializeProviderForChain(chainId: number): Promise<Provider> {
     };
 
     console.log(`[${chainLabel}] Initialized with single RPC provider from ${getSingleRpcEnvKey(chainId)}`);
-    return createManagedProvider([config]);
+    return createManagedProvider([config], { network: ethers.Network.from(chainId) });
   }
 
   throw new Error(
@@ -320,7 +320,10 @@ export function getProviderForChain(chainId: number): Provider {
     );
   }
 
-  const temporaryProvider = new ethers.JsonRpcProvider(tempUrl, chainId);
+  const temporaryProvider = new ethers.JsonRpcProvider(tempUrl, chainId, {
+    batchMaxCount: 1,
+    staticNetwork: true,
+  });
   providersByChain.set(chainId, temporaryProvider);
   return temporaryProvider;
 }
@@ -331,8 +334,8 @@ export function getProvider(): Provider {
 
 export function getScanCapableProviderForChain(chainId: number): Provider | null {
   const provider = getProviderForChain(chainId);
-  if ('getRPCManager' in provider && typeof provider.getRPCManager === 'function') {
-    return provider.getRPCManager().getScanCapableProvider();
+  if (provider instanceof RPCProxyProvider) {
+    return provider.getScanCapableProvider();
   }
   return provider;
 }

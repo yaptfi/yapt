@@ -104,6 +104,7 @@ interface ProviderState {
 interface QueuedCall<T> {
   method: string;
   params: any[];
+  scanOnly: boolean;
   resolve: (value: T) => void;
   reject: (error: Error) => void;
   enqueueTime: number;
@@ -120,6 +121,7 @@ export class RPCManager {
   private roundRobinIndex = 0;
   private readonly maxQueueSize: number;
   private readonly maxConcurrency: number;
+  private readonly network?: ethers.Network;
   private readonly maxConsecutiveErrors = 3;
   private readonly errorBackoffMs = 60000; // 1 minute
 
@@ -128,10 +130,12 @@ export class RPCManager {
     options?: {
       maxQueueSize?: number;
       maxConcurrency?: number;
+      network?: ethers.Network;
     }
   ) {
     this.maxQueueSize = options?.maxQueueSize || 1000;
     this.maxConcurrency = options?.maxConcurrency || 50;
+    this.network = options?.network;
 
     // Initialize providers sorted by priority (highest first)
     const sortedConfigs = [...configs]
@@ -153,9 +157,18 @@ export class RPCManager {
    * Create provider state with token bucket
    */
   private createProviderState(config: RPCProviderConfig): ProviderState {
-    const provider = new ethers.JsonRpcProvider(config.url);
+    // RPCManager already schedules individual requests. Disabling ethers batching
+    // prevents an id-less provider throttle response from corrupting an otherwise
+    // valid mixed batch into a BAD_DATA error.
+    const provider = new ethers.JsonRpcProvider(
+      config.url,
+      this.network,
+      this.network
+        ? { batchMaxCount: 1, staticNetwork: true }
+        : { batchMaxCount: 1 }
+    );
     const tokenBucket = new TokenBucket(
-      config.callsPerSecond * 2, // Allow burst up to 2 seconds worth
+      Math.max(1, config.callsPerSecond * 2), // Allow a burst while supporting sub-0.5 calls/sec rates
       config.callsPerSecond
     );
 
@@ -220,7 +233,7 @@ export class RPCManager {
   /**
    * Get next available provider using round-robin with health checks
    */
-  private async getNextProvider(): Promise<ProviderState | null> {
+  private async getNextProvider(scanOnly: boolean): Promise<ProviderState | null> {
     if (this.providers.length === 0) {
       return null;
     }
@@ -232,6 +245,10 @@ export class RPCManager {
       this.roundRobinIndex = (this.roundRobinIndex + 1) % this.providers.length;
       attempts++;
 
+      if (scanOnly && state.config.supportsLargeBlockScans !== true) {
+        continue;
+      }
+
       if (this.isProviderAvailable(state)) {
         return state;
       }
@@ -242,6 +259,7 @@ export class RPCManager {
     let bestProvider: ProviderState | null = null;
 
     for (const state of this.providers) {
+      if (scanOnly && state.config.supportsLargeBlockScans !== true) continue;
       if (!state.isHealthy) continue;
 
       this.resetDailyCountersIfNeeded(state);
@@ -298,18 +316,25 @@ export class RPCManager {
       state.isHealthy = true;
       console.log(`[RPCManager] Provider "${state.config.name}" recovered and marked healthy`);
     }
-    state.dailyCallCount++;
   }
 
   /**
    * Execute an RPC call with automatic failover
    */
-  private async executeCall<T>(method: string, params: any[]): Promise<T> {
+  private async executeCall<T>(method: string, params: any[], scanOnly: boolean): Promise<T> {
     let lastError: Error | null = null;
-    const maxRetries = this.providers.length;
+    const eligibleProviderCount = scanOnly
+      ? this.providers.filter(state => state.config.supportsLargeBlockScans === true).length
+      : this.providers.length;
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const providerState = await this.getNextProvider();
+    if (eligibleProviderCount === 0) {
+      throw new Error(scanOnly
+        ? 'No scan-capable RPC providers configured'
+        : 'No RPC providers configured');
+    }
+
+    for (let attempt = 0; attempt < eligibleProviderCount; attempt++) {
+      const providerState = await this.getNextProvider(scanOnly);
 
       if (!providerState) {
         // All providers exhausted or rate limited
@@ -333,7 +358,13 @@ export class RPCManager {
         }
 
         // Continue to next provider
-        console.log(`[RPCManager] Retrying with next provider (attempt ${attempt + 1}/${maxRetries})`);
+        console.log(
+          `[RPCManager] Retrying with next ${scanOnly ? 'scan-capable ' : ''}provider ` +
+          `(attempt ${attempt + 1}/${eligibleProviderCount})`
+        );
+      } finally {
+        // Provider quotas count attempted requests, including throttled or failed calls.
+        providerState.dailyCallCount++;
       }
     }
 
@@ -357,6 +388,18 @@ export class RPCManager {
    * Queue a call for execution
    */
   async send<T = any>(method: string, params: any[]): Promise<T> {
+    return this.enqueueCall(method, params, false);
+  }
+
+  /**
+   * Queue an RPC call that may only use providers configured for block scans.
+   * Scan calls retain normal rate limiting, health tracking, and failover.
+   */
+  async sendScan<T = unknown>(method: string, params: unknown[]): Promise<T> {
+    return this.enqueueCall(method, params, true);
+  }
+
+  private async enqueueCall<T>(method: string, params: unknown[], scanOnly: boolean): Promise<T> {
     return new Promise((resolve, reject) => {
       if (this.queue.length >= this.maxQueueSize) {
         reject(new Error(`RPC queue full (max: ${this.maxQueueSize})`));
@@ -366,6 +409,7 @@ export class RPCManager {
       this.queue.push({
         method,
         params,
+        scanOnly,
         resolve,
         reject,
         enqueueTime: Date.now(),
@@ -399,7 +443,7 @@ export class RPCManager {
     this.activeRequests++;
 
     try {
-      const result = await this.executeCall(call.method, call.params);
+      const result = await this.executeCall(call.method, call.params, call.scanOnly);
       call.resolve(result);
     } catch (error) {
       call.reject(error as Error);
@@ -455,25 +499,9 @@ export class RPCManager {
     };
   }
 
-  /**
-   * Get a provider that supports large block scans
-   * Returns a direct ethers provider (not proxied through queue)
-   * Used for operations like eth_getLogs that may scan 100k+ blocks
-   */
-  getScanCapableProvider(): ethers.JsonRpcProvider | null {
-    // Filter to only providers that support large block scans
-    const scanCapableProviders = this.providers.filter(
-      state => state.config.supportsLargeBlockScans === true && state.isHealthy
-    );
-
-    if (scanCapableProviders.length === 0) {
-      console.warn('[RPCManager] No scan-capable providers available');
-      return null;
-    }
-
-    // Return the highest priority scan-capable provider
-    // (providers are already sorted by priority)
-    return scanCapableProviders[0].provider;
+  /** Returns whether at least one active provider is configured for block scans. */
+  hasScanCapableProviders(): boolean {
+    return this.providers.some(state => state.config.supportsLargeBlockScans === true);
   }
 
   /**

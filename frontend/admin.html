@@ -355,7 +355,7 @@
         <div><strong>How provider routing works:</strong> Ethereum uses the main URL. Arbitrum uses the optional Arbitrum URL when present, then health and rate limits apply per chain.</div>
         <div style="margin-top: 0.35rem;"><strong>Priority:</strong> higher numbers are preferred first. <strong>0</strong> means neutral/default (not disabled).</div>
         <div style="margin-top: 0.35rem;"><strong>Calls/Second:</strong> max average request rate allowed for this provider. Keep below your vendor quota.</div>
-        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> “Large Block Scans” is for long `eth_getLogs` ranges; “ENS” is required for `*.eth` resolution.</div>
+        <div style="margin-top: 0.35rem;"><strong>Capabilities:</strong> “Historical Block Scans” enables adaptive `eth_getLogs` routing and failover; “ENS” is required for `*.eth` resolution.</div>
       </div>
 
       <div class="add-provider-form">
@@ -392,10 +392,10 @@
             <div class="form-field">
               <label for="providerSupportsLargeScans" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                 <input type="checkbox" id="providerSupportsLargeScans" checked style="width: auto; height: auto; margin: 0;">
-                <span>Large Block Scans</span>
+                <span>Historical Block Scans</span>
               </label>
               <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: -0.25rem;">
-                Uncheck for Alchemy/GetBlock (10-2k block limits)
+                Check if historical eth_getLogs works; block-range limits are adapted automatically.
               </div>
             </div>
             <div class="form-field">
