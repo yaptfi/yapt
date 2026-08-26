@@ -34,6 +34,14 @@ jest.mock('../../src/utils/apy', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const updateModule = require('../../src/services/update') as {
+  getPositionMetrics: (positionId: string, position?: Position) => Promise<{
+    absoluteYield?: {
+      totalYield7d: number;
+      avgDailyYield: number;
+      projectedMonthlyYield: number;
+      projectedYearlyYield: number;
+    };
+  } | null>;
   updatePosition: (position: Position) => Promise<void>;
 };
 
@@ -130,6 +138,53 @@ describe('updatePosition reward closure handling', () => {
       0,
       null
     );
+  });
+
+  it('records a claim above the dust threshold as zero yield instead of negative yield', async () => {
+    adapter.readCurrentValue.mockResolvedValue(15);
+    mockGetLatestSnapshot.mockResolvedValue({
+      ...LATEST_SNAPSHOT,
+      value_usd: '100',
+    });
+
+    await updateModule.updatePosition({
+      ...REWARD_POSITION,
+      displayName: 'Uniswap v3 WBTC/USDC (Arbitrum) #5488174',
+      baseAsset: 'USDC',
+      metadata: {
+        ...REWARD_POSITION.metadata,
+        protocolKey: 'uniswap-v3-wbtc-usdc-arbitrum-rewards',
+        tokenId: '5488174',
+      },
+    });
+
+    expect(mockCreateSnapshot).toHaveBeenCalledWith(
+      REWARD_POSITION.id,
+      expect.any(Date),
+      15,
+      0,
+      0,
+      null,
+      false
+    );
+  });
+
+  it('never exposes a negative future-income projection for rewards', async () => {
+    mockGetTotalYieldSince.mockResolvedValue({ totalYieldUsd: -133.7, daysCovered: 7 });
+
+    const metrics = await updateModule.getPositionMetrics(REWARD_POSITION.id, REWARD_POSITION);
+
+    expect(mockGetTotalYieldSince).toHaveBeenCalledWith(
+      REWARD_POSITION.id,
+      expect.any(Date),
+      { positiveOnly: true }
+    );
+    expect(metrics?.absoluteYield).toEqual({
+      totalYield7d: 0,
+      avgDailyYield: 0,
+      projectedMonthlyYield: 0,
+      projectedYearlyYield: 0,
+    });
   });
 
   it('archives rewards position when value read fails but closure is confirmed', async () => {

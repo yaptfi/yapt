@@ -1,4 +1,4 @@
-import { queryOne } from '../utils/db';
+import { query } from '../utils/db';
 import { Position } from '../types';
 import { getPositionMetrics, PositionMetrics } from './update';
 import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
@@ -159,34 +159,48 @@ export async function getActualYieldSummaryForWallets(walletIds: string[]): Prom
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const result = await queryOne<{
+  const results = await query<{
+    measure_method: string;
     total_24h: string;
     total_7d: string;
     total_30d: string;
+    positive_total_24h: string;
+    positive_total_7d: string;
+    positive_total_30d: string;
   }>(
-    `SELECT
+    `SELECT measure_method,
       COALESCE(SUM(CASE WHEN ts >= $2 THEN yield_delta_usd ELSE 0 END), 0) as total_24h,
       COALESCE(SUM(CASE WHEN ts >= $3 THEN yield_delta_usd ELSE 0 END), 0) as total_7d,
-      COALESCE(SUM(CASE WHEN ts >= $4 THEN yield_delta_usd ELSE 0 END), 0) as total_30d
+      COALESCE(SUM(CASE WHEN ts >= $4 THEN yield_delta_usd ELSE 0 END), 0) as total_30d,
+      COALESCE(SUM(CASE WHEN ts >= $2 THEN GREATEST(yield_delta_usd, 0) ELSE 0 END), 0) as positive_total_24h,
+      COALESCE(SUM(CASE WHEN ts >= $3 THEN GREATEST(yield_delta_usd, 0) ELSE 0 END), 0) as positive_total_7d,
+      COALESCE(SUM(CASE WHEN ts >= $4 THEN GREATEST(yield_delta_usd, 0) ELSE 0 END), 0) as positive_total_30d
      FROM (
-       SELECT ps.ts, ps.yield_delta_usd
+       SELECT ps.ts, ps.yield_delta_usd, p.measure_method
        FROM position_snapshot ps
        JOIN position p ON ps.position_id = p.id
        WHERE p.wallet_id = ANY($1::uuid[])
          AND p.counting_mode IN ('count', 'partial')
        UNION ALL
-       SELECT psa.ts, psa.yield_delta_usd
+       SELECT psa.ts, psa.yield_delta_usd, pa.measure_method
        FROM position_snapshot_archive psa
        JOIN position_archive pa ON psa.position_id = pa.id
        WHERE pa.wallet_id = ANY($1::uuid[])
          AND pa.counting_mode IN ('count', 'partial')
-     ) combined`,
+     ) combined
+     GROUP BY measure_method`,
     [walletIds, twentyFourHoursAgo, sevenDaysAgo, thirtyDaysAgo]
   );
 
-  return {
-    actual24hYield: result ? parseFloat(result.total_24h) : 0,
-    actual7dYield: result ? parseFloat(result.total_7d) : 0,
-    actual30dYield: result ? parseFloat(result.total_30d) : 0,
-  };
+  return results.reduce<ActualYieldSummary>((summary, result) => {
+    const usePositiveTotals = getPositionCategory(result.measure_method) === 'rewards';
+    summary.actual24hYield += parseFloat(usePositiveTotals ? result.positive_total_24h : result.total_24h);
+    summary.actual7dYield += parseFloat(usePositiveTotals ? result.positive_total_7d : result.total_7d);
+    summary.actual30dYield += parseFloat(usePositiveTotals ? result.positive_total_30d : result.total_30d);
+    return summary;
+  }, {
+    actual24hYield: 0,
+    actual7dYield: 0,
+    actual30dYield: 0,
+  });
 }

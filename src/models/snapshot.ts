@@ -158,16 +158,31 @@ export async function getRecentYieldDeltas(
  */
 export async function getTotalYieldSince(
   positionId: string,
-  since: Date
+  since: Date,
+  options: {
+    positiveOnly?: boolean;
+    minimumValueUsd?: number;
+  } = {}
 ): Promise<{ totalYieldUsd: number; daysCovered: number }> {
+  const yieldExpression = options.positiveOnly
+    ? 'GREATEST(yield_delta_usd, 0)'
+    : 'yield_delta_usd';
+  const minimumValueFilter = options.minimumValueUsd === undefined
+    ? ''
+    : ' AND value_usd >= $3';
+  const params: unknown[] = [positionId, since];
+  if (options.minimumValueUsd !== undefined) {
+    params.push(options.minimumValueUsd.toString());
+  }
+
   const result = await queryOne<{ total_yield: string; first_ts: Date; last_ts: Date }>(
     `SELECT
-      COALESCE(SUM(yield_delta_usd), 0) as total_yield,
+      COALESCE(SUM(${yieldExpression}), 0) as total_yield,
       MIN(ts) as first_ts,
       MAX(ts) as last_ts
      FROM position_snapshot
-     WHERE position_id = $1 AND ts >= $2`,
-    [positionId, since]
+     WHERE position_id = $1 AND ts >= $2${minimumValueFilter}`,
+    params
   );
 
   if (!result || !result.first_ts || !result.last_ts) {

@@ -256,7 +256,12 @@ export async function updatePosition(position: Position): Promise<void> {
     // CASE 3: Reward positions – record yield-only snapshot with APY disabled
     if (positionCategory === 'rewards') {
       const latestValue = parseFloat(latestSnapshot.value_usd);
-      const yieldDeltaUsd = currentValue - latestValue;
+      // A rewards position tracks currently claimable stablecoin fees, not
+      // cumulative earnings. A decrease means rewards were claimed; it is not
+      // negative yield. Earnings that accrued between the previous snapshot
+      // and the claim cannot be recovered without transaction-level flow data,
+      // so record a conservative zero for that interval.
+      const yieldDeltaUsd = Math.max(0, currentValue - latestValue);
 
       await createSnapshot(
         position.id,
@@ -442,50 +447,24 @@ export async function getPositionMetrics(positionId: string, position?: Position
     // For reward positions, calculate absolute earnings rate
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Special handling for rewards-only protocols that can be fully claimed:
-    // exclude low-value snapshots after claims to keep projected income stable.
-    const protocolKey = position?.metadata?.protocolKey as string;
-    const preserveProjectionAfterClaim = new Set([
-      'convex-cvxcrv',
-      'uniswap-v3-wbtc-usdt-arbitrum-rewards',
-      'uniswap-v3-paxg-usdc-ethereum-rewards',
-    ]).has(protocolKey);
     const currentValue = parseFloat(latestSnapshot.value_usd);
-
-    let yieldHistory;
-    if (preserveProjectionAfterClaim && currentValue < 1.0) {
-      // After reward claim: calculate projections using only snapshots with value >= $1
-      // This preserves the pre-claim income projection
-      const { queryOne } = await import('../utils/db');
-      const result = await queryOne<{ total_yield: string; first_ts: Date; last_ts: Date }>(
-        `SELECT
-          COALESCE(SUM(yield_delta_usd), 0) as total_yield,
-          MIN(ts) as first_ts,
-          MAX(ts) as last_ts
-         FROM position_snapshot
-         WHERE position_id = $1 AND ts >= $2 AND value_usd >= 1.0`,
-        [positionId, sevenDaysAgo]
-      );
-
-      if (result && result.first_ts && result.last_ts) {
-        const daysCovered = (result.last_ts.getTime() - result.first_ts.getTime()) / (1000 * 60 * 60 * 24);
-        yieldHistory = {
-          totalYieldUsd: parseFloat(result.total_yield),
-          daysCovered,
-        };
-      } else {
-        yieldHistory = { totalYieldUsd: 0, daysCovered: 0 };
-      }
-    } else {
-      // Normal calculation for other reward positions
-      yieldHistory = await getTotalYieldSince(positionId, sevenDaysAgo);
-    }
+    const yieldHistory = await getTotalYieldSince(positionId, sevenDaysAgo, {
+      // Historical snapshots may contain claim events recorded as negative
+      // deltas. They are withdrawals of accrued rewards, never negative yield.
+      positiveOnly: true,
+      // While a claimable balance rebuilds from near zero, preserve the prior
+      // projection instead of diluting it with post-claim zero snapshots.
+      ...(currentValue < 1.0 && { minimumValueUsd: 1.0 }),
+    });
 
     if (yieldHistory.daysCovered > 0) {
-      const dailyAvgYield = yieldHistory.totalYieldUsd / yieldHistory.daysCovered;
+      // Preserve the rewards-category invariant at the service boundary too,
+      // even if malformed or legacy data reaches this path.
+      const totalYieldUsd = Math.max(0, yieldHistory.totalYieldUsd);
+      const dailyAvgYield = totalYieldUsd / yieldHistory.daysCovered;
 
       absoluteYieldMetrics = {
-        totalYield7d: yieldHistory.totalYieldUsd,
+        totalYield7d: totalYieldUsd,
         avgDailyYield: dailyAvgYield,
         projectedMonthlyYield: dailyAvgYield * 30,
         projectedYearlyYield: dailyAvgYield * 365,
