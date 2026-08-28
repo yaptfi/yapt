@@ -8,6 +8,7 @@ const mockGetMostRecentResetSnapshot = jest.fn();
 const mockGetTotalYieldSince = jest.fn();
 const mockArchivePosition = jest.fn();
 const mockUpdatePositionFutureIncomeProjection = jest.fn();
+const mockGetUniswapIncomeForecast = jest.fn();
 
 jest.mock('../../src/plugins/registry', () => ({
   getAdapter: mockGetAdapter,
@@ -28,6 +29,11 @@ jest.mock('../../src/models/position', () => ({
 
 jest.mock('../../src/utils/apy', () => ({
   computeApy: jest.fn().mockReturnValue({ apy: 0 }),
+}));
+
+jest.mock('../../src/services/uniswap-income-forecast', () => ({
+  getUniswapIncomeForecast: mockGetUniswapIncomeForecast,
+  isUniswapProtocol: (protocolKey: string | undefined) => protocolKey?.startsWith('uniswap-') ?? false,
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -86,6 +92,15 @@ describe('future-income projection caching', () => {
     mockGetMostRecentResetSnapshot.mockResolvedValue(null);
     mockArchivePosition.mockResolvedValue(undefined);
     mockUpdatePositionFutureIncomeProjection.mockResolvedValue(undefined);
+    mockGetUniswapIncomeForecast.mockResolvedValue({
+      dailyRateUsd: 1,
+      metadata: {
+        model: 'uniswap-weekday-v1',
+        maturity: 'early',
+        observedDays: 1,
+        weekdayProfileSource: 'neutral',
+      },
+    });
   });
 
   afterEach(() => {

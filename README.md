@@ -123,7 +123,12 @@ See `CLAUDE.md` for detailed development setup and architecture documentation.
 - **Weekly**: Sunday cleanup removes untracked wallets, then queues discovery for the remaining tracked wallets
 - **Manual**: Refresh button available (rate-limited to once per 5 minutes)
 - **APY Calculation**: Two-point method with deposit/withdrawal correction
-- **Income Projections**: Calculated on-demand from current APY
+- **Income Projections**: Savings and fixed-income positions use their existing
+  APY/YTM models. Uniswap reward positions use `uniswap-weekday-v1`, which
+  estimates stablecoin fees after the first valid hourly interval, learns UTC
+  weekday seasonality from aggregate snapshot history, and becomes more
+  conservative as observations mature. Claims and snapshot gaps over six hours
+  are excluded from the forecast; actual 7-day yield remains reported separately.
 
 ### Counting Modes
 - **count**: Full position value (principal + yield)
@@ -171,8 +176,16 @@ config/
 ```bash
 npm test                # Run Jest tests
 npm run typecheck       # TypeScript validation
+npm run typecheck:backtest # Validate the historical backtest
 npm run lint            # ESLint
 npm run browse          # Playwright UI automation
+```
+
+With `DATABASE_URL` configured, compare the legacy and weekday-aware Uniswap
+forecasts at historical UTC cutoffs without emitting wallet or position IDs:
+
+```bash
+BACKTEST_DAYS=28 npm run backtest:uniswap-income
 ```
 
 ### API Examples

@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getActivePositionsByWallets } from '../models/position';
 import { getUserWallets } from '../models/user-wallet';
 import { getPositionMetrics } from '../services/update';
-import { getProjectedIncomeFromMetrics } from '../services/position-view';
+import { getPortfolioProjectionMetadata, getProjectedIncomeFromMetrics } from '../services/position-view';
 import { query } from '../utils/db';
 import { requireAuth } from '../middleware/auth';
 import { getPositionCategory } from '../utils/position-category';
@@ -86,6 +86,7 @@ export default async function portfolioRoutes(server: FastifyInstance) {
               estYearlyUsd,
               // Include absolute yield metrics for reward positions
               ...(metrics.absoluteYield && { absoluteYield: metrics.absoluteYield }),
+              ...(metrics.projection && { projection: metrics.projection }),
             };
           })
       );
@@ -101,6 +102,7 @@ export default async function portfolioRoutes(server: FastifyInstance) {
         estDailyUsd: totalEstDailyUsd,
         estMonthlyUsd: totalEstMonthlyUsd,
         estYearlyUsd: totalEstYearlyUsd,
+        projection: getPortfolioProjectionMetadata(validPositions),
         positions: validPositions,
       });
     } catch (error) {

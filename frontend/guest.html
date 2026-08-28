@@ -54,6 +54,7 @@
             <span class="income-actual">Last 30D: <span class="income-actual-value" id="monthlyActual">+$0</span></span>
           </div>
         </div>
+        <p id="projectionMaturityNote" class="projection-maturity-note" style="display: none;"></p>
 
         <!-- Income Context Card -->
         <div class="portfolio-card income-context-card">
@@ -89,7 +90,7 @@
     </main>
 
     <footer>
-      <p>*) 7D APY used for projections. Data updates hourly. Read-only guest view. <span id="app-version" class="app-version"></span></p>
+      <p>*) Uniswap fee projections use weekday-aware observations; other positions use their existing yield model. Data updates hourly. Read-only guest view. <span id="app-version" class="app-version"></span></p>
     </footer>
   </div>
 
@@ -187,8 +188,8 @@
                 <td class="${getApyClass(pos.apy)}">${formatApy(pos.apy, 'apy', pos)}</td>
                 <td class="${getApyClass(pos.apy7d)}">${formatApy(pos.apy7d, 'apy7d', pos)}</td>
                 <td class="${getApyClass(pos.apy30d)}">${formatApy(pos.apy30d, 'apy30d', pos)}</td>
-                <td class="amount">${formatCurrency(pos.estDailyUsd)}</td>
-                <td class="amount">${formatCurrency(pos.estMonthlyUsd)}</td>
+                <td class="amount">${formatIncomeEstimate(pos, 'estDailyUsd')}</td>
+                <td class="amount">${formatIncomeEstimate(pos, 'estMonthlyUsd')}</td>
                 <td>${pos.lastUpdated ? formatDate(pos.lastUpdated) : 'Never'}</td>
               </tr>
             `).join('')}
@@ -204,6 +205,9 @@
       const estDailyUsd = positions.reduce((sum, pos) => sum + (pos.estDailyUsd || 0), 0);
       const estMonthlyUsd = positions.reduce((sum, pos) => sum + (pos.estMonthlyUsd || 0), 0);
       const estYearlyUsd = positions.reduce((sum, pos) => sum + (pos.estYearlyUsd || 0), 0);
+      const onlyCollecting = positions.length > 0 && positions.every(pos =>
+        pos.projection && pos.projection.maturity === 'collecting'
+      );
 
       const lastUpdated = positions.reduce((latest, pos) => {
         if (!pos.lastUpdated) return latest;
@@ -219,17 +223,18 @@
       const estWeeklyUsd = estDailyUsd * 7;
 
       document.getElementById('totalValue').textContent = formatCurrency(totalValueUsd);
-      document.getElementById('annualIncome').textContent = formatCurrency(estYearlyUsd);
-      document.getElementById('dailyIncome').textContent = formatCurrency(estDailyUsd);
+      document.getElementById('annualIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estYearlyUsd);
+      document.getElementById('dailyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estDailyUsd);
       document.getElementById('dailyActual').textContent = `${actual24hYield >= 0 ? '+' : ''}${formatCurrency(actual24hYield)}`;
-      document.getElementById('weeklyIncome').textContent = formatCurrency(estWeeklyUsd);
+      document.getElementById('weeklyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estWeeklyUsd);
       document.getElementById('weeklyActual').textContent = `${actual7dYield >= 0 ? '+' : ''}${formatCurrency(actual7dYield)}`;
-      document.getElementById('monthlyIncome').textContent = formatCurrency(estMonthlyUsd);
+      document.getElementById('monthlyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estMonthlyUsd);
       document.getElementById('monthlyActual').textContent = `${actual30dYield >= 0 ? '+' : ''}${formatCurrency(actual30dYield)}`;
       document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
 
       // Render income context
       renderIncomeContext(estYearlyUsd);
+      renderProjectionMaturityNote(positions);
 
       document.getElementById('portfolioSummary').style.display = 'block';
     }

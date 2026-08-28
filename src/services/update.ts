@@ -12,6 +12,11 @@ import {
   APY_MIN_BASE_USD,
   APY_MIN_BASE_RATIO,
 } from '../constants';
+import {
+  getUniswapIncomeForecast,
+  isUniswapProtocol,
+  UniswapProjectionMetadata,
+} from './uniswap-income-forecast';
 
 // Flow detection removed: with hourly updates, yield deltas are small enough that
 // deposits/withdrawals are obvious from magnitude. No need for expensive event scanning.
@@ -31,6 +36,7 @@ export interface PositionMetrics {
   lastUpdated: Date;
   shouldProjectFutureIncome: boolean;
   absoluteYield?: AbsoluteYieldMetrics;
+  projection?: UniswapProjectionMetadata;
 }
 
 const SLOW_PROJECTION_CHECK_MS = 200;
@@ -61,7 +67,8 @@ function getProtocolKeyFromPosition(position?: Position): string | undefined {
 
   const metadata = position.metadata as Record<string, unknown>;
   const metadataProtocolKey = typeof metadata.protocolKey === 'string' ? metadata.protocolKey : undefined;
-  const rowProtocolKey = (position as Position & { protocol_key?: string }).protocol_key;
+  const row = position as Position & { protocol_key?: string; protocolKey?: string };
+  const rowProtocolKey = row.protocol_key || row.protocolKey;
 
   return metadataProtocolKey || rowProtocolKey;
 }
@@ -441,23 +448,33 @@ export async function getPositionMetrics(positionId: string, position?: Position
   const isRewardBased = getPositionCategory(position?.measureMethod ?? '') === 'rewards';
   const protocolKey = getProtocolKeyFromPosition(position);
 
-  let absoluteYieldMetrics = null;
+  let absoluteYieldMetrics: AbsoluteYieldMetrics | undefined;
+  let projection: UniswapProjectionMetadata | undefined;
 
   if (isRewardBased) {
     // For reward positions, calculate absolute earnings rate
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const currentValue = parseFloat(latestSnapshot.value_usd);
     const yieldHistory = await getTotalYieldSince(positionId, sevenDaysAgo, {
       // Historical snapshots may contain claim events recorded as negative
       // deltas. They are withdrawals of accrued rewards, never negative yield.
       positiveOnly: true,
-      // While a claimable balance rebuilds from near zero, preserve the prior
-      // projection instead of diluting it with post-claim zero snapshots.
-      ...(currentValue < 1.0 && { minimumValueUsd: 1.0 }),
     });
 
-    if (yieldHistory.daysCovered > 0) {
+    if (isUniswapProtocol(protocolKey) && position && protocolKey) {
+      const forecast = await getUniswapIncomeForecast(position, protocolKey, new Date(latestSnapshot.ts));
+      const totalYieldUsd = Math.max(0, yieldHistory.totalYieldUsd);
+      const observedDailyYield = yieldHistory.daysCovered > 0
+        ? totalYieldUsd / yieldHistory.daysCovered
+        : 0;
+      absoluteYieldMetrics = {
+        totalYield7d: totalYieldUsd,
+        avgDailyYield: observedDailyYield,
+        projectedMonthlyYield: forecast.dailyRateUsd * 30,
+        projectedYearlyYield: forecast.dailyRateUsd * 365,
+      };
+      projection = forecast.metadata;
+    } else if (yieldHistory.daysCovered > 0) {
       // Preserve the rewards-category invariant at the service boundary too,
       // even if malformed or legacy data reaches this path.
       const totalYieldUsd = Math.max(0, yieldHistory.totalYieldUsd);
@@ -568,6 +585,7 @@ export async function getPositionMetrics(positionId: string, position?: Position
     shouldProjectFutureIncome,
     // Include absolute yield metrics for reward-based positions
     ...(absoluteYieldMetrics && { absoluteYield: absoluteYieldMetrics }),
+    ...(projection && { projection }),
   };
 
   const metricsDurationMs = Date.now() - metricsStart;

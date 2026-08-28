@@ -9,7 +9,11 @@ import { getUserWallets } from '../models/user-wallet';
 import { getSnapshotsInRange } from '../models/snapshot';
 import { CountingMode } from '../types';
 import { requireAuth } from '../middleware/auth';
-import { enrichPositionsWithMetrics, getActualYieldSummaryForWallets } from '../services/position-view';
+import {
+  enrichPositionsWithMetrics,
+  getActualYieldSummaryForWallets,
+  getPortfolioProjectionMetadata,
+} from '../services/position-view';
 
 interface UpdatePositionBody {
   countingMode?: CountingMode;
@@ -55,6 +59,7 @@ export default async function positionRoutes(server: FastifyInstance) {
           actual24hYield,
           actual7dYield,
           actual30dYield,
+          projection: getPortfolioProjectionMetadata(enrichedPositions),
         },
       });
     } catch (error) {

@@ -12,7 +12,9 @@
     "test": "jest",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "browse": "npx tsx tests/browse-app.ts"
+    "typecheck:backtest": "tsc -p tsconfig.backtest.json",
+    "browse": "npx tsx tests/browse-app.ts",
+    "backtest:uniswap-income": "tsx scripts/backtest-uniswap-income.ts"
   },
   "keywords": [
     "defi",

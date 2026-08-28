@@ -582,8 +582,8 @@ async function loadPositions() {
               <td class="${getApyClass(pos.apy)}">${formatApy(pos.apy, 'apy', pos)}</td>
               <td class="${getApyClass(pos.apy7d)}">${formatApy(pos.apy7d, 'apy7d', pos)}</td>
               <td class="${getApyClass(pos.apy30d)}">${formatApy(pos.apy30d, 'apy30d', pos)}</td>
-              <td class="amount">${formatCurrency(pos.estDailyUsd)}</td>
-              <td class="amount">${formatCurrency(pos.estMonthlyUsd)}</td>
+              <td class="amount">${formatIncomeEstimate(pos, 'estDailyUsd')}</td>
+              <td class="amount">${formatIncomeEstimate(pos, 'estMonthlyUsd')}</td>
               <td>${pos.lastUpdated ? formatDate(pos.lastUpdated) : 'Never'}</td>
             </tr>
           `).join('')}
@@ -620,6 +620,9 @@ async function loadPortfolioSummary() {
     const estDailyUsd = positions.reduce((sum, pos) => sum + (pos.estDailyUsd || 0), 0);
     const estMonthlyUsd = positions.reduce((sum, pos) => sum + (pos.estMonthlyUsd || 0), 0);
     const estYearlyUsd = positions.reduce((sum, pos) => sum + (pos.estYearlyUsd || 0), 0);
+    const onlyCollecting = positions.length > 0 && positions.every(pos =>
+      pos.projection && pos.projection.maturity === 'collecting'
+    );
 
     // Find most recent update time
     const lastUpdated = positions.reduce((latest, pos) => {
@@ -629,21 +632,22 @@ async function loadPortfolioSummary() {
     }, null);
 
     document.getElementById('totalValue').textContent = formatCurrency(totalValueUsd);
-    document.getElementById('annualIncome').textContent = formatCurrency(estYearlyUsd);
+    document.getElementById('annualIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estYearlyUsd);
 
     // Update income estimates with actual yields displayed below
     const estWeeklyUsd = estDailyUsd * 7;
 
-    document.getElementById('dailyIncome').textContent = formatCurrency(estDailyUsd);
+    document.getElementById('dailyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estDailyUsd);
     document.getElementById('dailyActual').textContent = `+${formatCurrency(actual24hYield)}`;
 
-    document.getElementById('weeklyIncome').textContent = formatCurrency(estWeeklyUsd);
+    document.getElementById('weeklyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estWeeklyUsd);
     document.getElementById('weeklyActual').textContent = `+${formatCurrency(actual7dYield)}`;
 
-    document.getElementById('monthlyIncome').textContent = formatCurrency(estMonthlyUsd);
+    document.getElementById('monthlyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estMonthlyUsd);
     document.getElementById('monthlyActual').textContent = `+${formatCurrency(actual30dYield)}`;
     // Render income context based on estimated annual income
     renderIncomeContext(estYearlyUsd);
+    renderProjectionMaturityNote(positions);
     document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
 
     // Load stablecoin prices

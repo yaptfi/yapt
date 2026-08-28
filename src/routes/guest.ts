@@ -1,6 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { queryOne, query } from '../utils/db';
-import { enrichPositionsWithMetrics, getActualYieldSummaryForWallets } from '../services/position-view';
+import {
+  enrichPositionsWithMetrics,
+  getActualYieldSummaryForWallets,
+  getPortfolioProjectionMetadata,
+} from '../services/position-view';
 
 interface Wallet {
   id: string;
@@ -18,6 +22,7 @@ interface PositionRow {
   measureMethod: string;
   isActive: boolean;
   metadata?: Record<string, unknown>;
+  protocolKey: string;
   valueUsd: number;
   apy: number | null;
   apy7d: number | null;
@@ -79,17 +84,19 @@ export default async function guestRoutes(server: FastifyInstance) {
         // Get positions for this wallet
         const positions = await query<PositionRow>(
           `SELECT
-            id,
-            wallet_id as "walletId",
-            display_name as "displayName",
-            base_asset as "baseAsset",
-            counting_mode as "countingMode",
-            measure_method as "measureMethod",
-            is_active as "isActive",
-            metadata
-           FROM position
-           WHERE wallet_id = $1 AND is_active = true
-           ORDER BY display_name`,
+            p.id,
+            p.wallet_id as "walletId",
+            p.display_name as "displayName",
+            p.base_asset as "baseAsset",
+            p.counting_mode as "countingMode",
+            p.measure_method as "measureMethod",
+            p.is_active as "isActive",
+            p.metadata,
+            pr.key as "protocolKey"
+           FROM position p
+           JOIN protocol pr ON pr.id = p.protocol_id
+           WHERE p.wallet_id = $1 AND p.is_active = true
+           ORDER BY p.display_name`,
           [id]
         );
 
@@ -107,6 +114,7 @@ export default async function guestRoutes(server: FastifyInstance) {
             actual24hYield,
             actual7dYield,
             actual30dYield,
+            projection: getPortfolioProjectionMetadata(enrichedPositions),
           },
         });
       } catch (error) {

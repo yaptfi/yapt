@@ -1272,6 +1272,30 @@ header {
 .pos-type-badge--fixed-income { background: rgba(245,158,11,0.12); color: rgba(251,191,36,0.9); }
 .pos-type-badge--rewards      { background: rgba(16,185,129,0.12); color: rgba(52,211,153,0.9); }
 
+.projection-badge {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.projection-badge--collecting { background: rgba(100,116,139,0.18); color: var(--text-dim); }
+.projection-badge--early { background: rgba(245,158,11,0.18); color: rgba(251,191,36,0.95); }
+.projection-badge--developing { background: rgba(99,102,241,0.18); color: rgba(165,180,252,0.95); }
+.projection-badge--mature { background: rgba(16,185,129,0.18); color: rgba(52,211,153,0.95); }
+
+.projection-maturity-note {
+  margin: 0.75rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 .severity {
   display: inline-block;
   padding: 0.25rem 0.5rem;

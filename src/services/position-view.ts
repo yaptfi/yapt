@@ -3,6 +3,7 @@ import { Position } from '../types';
 import { getPositionMetrics, PositionMetrics } from './update';
 import { estimateDailyIncome, estimateMonthlyIncome, estimateYearlyIncome } from '../utils/apy';
 import { getPositionCategory, PositionCategory } from '../utils/position-category';
+import { ProjectionMaturity, UniswapProjectionMetadata } from './uniswap-income-forecast';
 
 export interface PositionLike {
   id: string;
@@ -12,6 +13,8 @@ export interface PositionLike {
   countingMode: string;
   measureMethod: string;
   metadata?: Position['metadata'];
+  protocolKey?: string;
+  protocol_key?: string;
 }
 
 export interface EnrichedPositionView {
@@ -36,6 +39,7 @@ export interface EnrichedPositionView {
     projectedMonthlyYield: number;
     projectedYearlyYield: number;
   };
+  projection?: UniswapProjectionMetadata;
 }
 
 export interface ActualYieldSummary {
@@ -59,8 +63,11 @@ export function getProjectedIncomeFromMetrics(
   }
 
   if (category === 'rewards' && metrics.absoluteYield) {
+    const projectedDailyYield = metrics.projection
+      ? metrics.absoluteYield.projectedMonthlyYield / 30
+      : metrics.absoluteYield.avgDailyYield;
     return {
-      estDailyUsd: metrics.absoluteYield.avgDailyYield,
+      estDailyUsd: projectedDailyYield,
       estMonthlyUsd: metrics.absoluteYield.projectedMonthlyYield,
       estYearlyUsd: metrics.absoluteYield.projectedYearlyYield,
     };
@@ -129,6 +136,7 @@ export async function enrichPositionsWithMetrics(
         estYearlyUsd,
         lastUpdated: metrics.lastUpdated,
         ...(metrics.absoluteYield && { absoluteYield: metrics.absoluteYield }),
+        ...(metrics.projection && { projection: metrics.projection }),
       };
     })
   );
@@ -141,6 +149,43 @@ export async function enrichPositionsWithMetrics(
   }
 
   return result;
+}
+
+const MATURITY_PRIORITY: Record<ProjectionMaturity, number> = {
+  collecting: 0,
+  early: 1,
+  developing: 2,
+  mature: 3,
+};
+
+/** Describe the least mature Uniswap estimate included in a portfolio total. */
+export function getPortfolioProjectionMetadata(
+  positions: Array<{ projection?: UniswapProjectionMetadata }>
+): UniswapProjectionMetadata | undefined {
+  const projections = positions
+    .map((position) => position.projection)
+    .filter((projection): projection is UniswapProjectionMetadata => projection !== undefined);
+  if (projections.length === 0) {
+    return undefined;
+  }
+
+  const leastMature = projections.reduce((current, projection) =>
+    MATURITY_PRIORITY[projection.maturity] < MATURITY_PRIORITY[current.maturity]
+      ? projection
+      : current
+  );
+  const source = projections.some((projection) => projection.weekdayProfileSource === 'neutral')
+    ? 'neutral'
+    : projections.some((projection) => projection.weekdayProfileSource === 'uniswap')
+      ? 'uniswap'
+      : 'pool';
+
+  return {
+    model: 'uniswap-weekday-v1',
+    maturity: leastMature.maturity,
+    observedDays: Math.min(...projections.map((projection) => projection.observedDays)),
+    weekdayProfileSource: source,
+  };
 }
 
 /**

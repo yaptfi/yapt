@@ -56,6 +56,66 @@ function getPositionTypeBadge(positionType) {
   }
 }
 
+function formatProjectionSource(source) {
+  switch (source) {
+    case 'pool': return 'same pool';
+    case 'uniswap': return 'all Uniswap pools';
+    case 'neutral': return 'neutral weekdays';
+    default: return 'unknown';
+  }
+}
+
+// Format an income estimate and its maturity metadata for Uniswap fee positions.
+function formatIncomeEstimate(position, field) {
+  const projection = position && position.projection;
+  if (!projection || projection.model !== 'uniswap-weekday-v1') {
+    return formatCurrency(position ? position[field] : 0);
+  }
+
+  const maturityLabels = {
+    collecting: 'Collecting',
+    early: 'Early',
+    developing: 'Developing',
+    mature: 'Mature'
+  };
+  const maturity = Object.prototype.hasOwnProperty.call(maturityLabels, projection.maturity)
+    ? projection.maturity
+    : 'collecting';
+  const observedDays = Number.isFinite(projection.observedDays) ? projection.observedDays : 0;
+  const title = `${observedDays.toFixed(1)} observed days; weekday profile: ${formatProjectionSource(projection.weekdayProfileSource)}`;
+  const value = maturity === 'collecting' ? 'Collecting data' : formatCurrency(position[field]);
+  return `<span class="income-estimate">${value}</span> <span class="projection-badge projection-badge--${maturity}" title="${title}">${maturityLabels[maturity]}</span>`;
+}
+
+function renderProjectionMaturityNote(positions) {
+  const note = document.getElementById('projectionMaturityNote');
+  if (!note) return;
+
+  const projections = positions
+    .map(position => position && position.projection)
+    .filter(projection => projection && projection.model === 'uniswap-weekday-v1');
+  const collecting = projections.filter(projection => projection.maturity === 'collecting').length;
+  const learning = projections.filter(projection =>
+    projection.maturity === 'early' || projection.maturity === 'developing'
+  );
+
+  if (collecting === 0 && learning.length === 0) {
+    note.textContent = '';
+    note.style.display = 'none';
+    return;
+  }
+
+  const messages = [];
+  if (collecting > 0) {
+    messages.push(`${collecting} Uniswap position${collecting === 1 ? ' is' : 's are'} still collecting data and has no forecast yet`);
+  }
+  if (learning.length > 0) {
+    messages.push(`portfolio totals include ${learning.length} early/developing Uniswap estimate${learning.length === 1 ? '' : 's'}`);
+  }
+  note.textContent = `${messages.join('; ')}. Estimates become more conservative as history builds.`;
+  note.style.display = 'block';
+}
+
 // Get CSS class for APY value
 function getApyClass(value) {
   if (value === null || value === undefined) return 'apy-neutral';
