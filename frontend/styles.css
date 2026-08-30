@@ -440,6 +440,18 @@ header h1 {
   overflow-x: auto;
 }
 
+@media (min-width: 769px) {
+  .positions-table table {
+    min-width: 1060px;
+  }
+
+  .positions-table th:first-child,
+  .positions-table td:first-child {
+    width: 16rem;
+    min-width: 16rem;
+  }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1118,10 +1130,16 @@ header {
   gap: 1rem;
 }
 
-.username {
+.username,
+.header-tagline {
   color: var(--text);
   font-weight: 600;
   font-size: 0.95rem;
+}
+
+.header-tagline {
+  color: var(--success);
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -1282,6 +1300,10 @@ header {
   line-height: 1.4;
   cursor: help;
   vertical-align: middle;
+}
+
+.projection-badge--standalone {
+  margin-left: 0;
 }
 
 .projection-badge--collecting { background: rgba(100,116,139,0.18); color: var(--text-dim); }
@@ -1810,6 +1832,10 @@ header {
 @media (max-width: 768px) {
   .header-content {
     padding: 1rem;
+  }
+
+  .header-tagline {
+    display: none;
   }
 
   .logo-text {

@@ -646,7 +646,7 @@ async function loadPortfolioSummary() {
     document.getElementById('monthlyIncome').textContent = onlyCollecting ? 'Collecting data' : formatCurrency(estMonthlyUsd);
     document.getElementById('monthlyActual').textContent = `+${formatCurrency(actual30dYield)}`;
     // Render income context based on estimated annual income
-    renderIncomeContext(estYearlyUsd);
+    renderIncomeContext(estYearlyUsd, positions);
     renderProjectionMaturityNote(positions);
     document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
 

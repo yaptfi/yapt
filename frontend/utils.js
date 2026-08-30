@@ -83,7 +83,11 @@ function formatIncomeEstimate(position, field) {
     : 'collecting';
   const observedDays = Number.isFinite(projection.observedDays) ? projection.observedDays : 0;
   const title = `${observedDays.toFixed(1)} observed days; weekday profile: ${formatProjectionSource(projection.weekdayProfileSource)}`;
-  const value = maturity === 'collecting' ? 'Collecting data' : formatCurrency(position[field]);
+  if (maturity === 'collecting') {
+    return `<span class="projection-badge projection-badge--collecting projection-badge--standalone" title="${title}">Collecting data</span>`;
+  }
+
+  const value = formatCurrency(position[field]);
   return `<span class="income-estimate">${value}</span> <span class="projection-badge projection-badge--${maturity}" title="${title}">${maturityLabels[maturity]}</span>`;
 }
 
@@ -209,12 +213,24 @@ function pickBand(bands, value) {
 }
 
 // Render income context message
-async function renderIncomeContext(annualIncome) {
+async function renderIncomeContext(annualIncome, positions = []) {
   const el = document.getElementById('incomeContext');
   if (!el) return;
 
   if (!annualIncome || annualIncome <= 0) {
-    el.innerHTML = '';
+    const activePositions = Array.isArray(positions) ? positions : [];
+    if (activePositions.length === 0) {
+      el.textContent = 'No active positions found for the selected wallet(s). Once Yapt finds a stablecoin yield position, its estimated income comparison will appear here.';
+      return;
+    }
+
+    const isCollecting = activePositions.some(position =>
+      position?.projection?.maturity === 'collecting' ||
+      (position?.positionType !== 'rewards' && position?.apy == null)
+    );
+    el.textContent = isCollecting
+      ? 'Yapt is still collecting enough data to calculate an estimated annual income. The comparison will appear here once the estimate is ready.'
+      : 'These positions currently have no estimated annual income, so there is no income comparison yet.';
     return;
   }
 
@@ -243,6 +259,6 @@ async function renderIncomeContext(annualIncome) {
   el.innerHTML = `
     With this estimated annual income, you make about as much as a <strong>${occ}</strong> in New York.
     You could likely live comfortably-ish in <strong>${place}</strong>.
-    <span class="disclaimer">Don't pack your bags yet, take this with a grain of salt. DYOR, NFA, etc.</span>
+    <span class="disclaimer">(Don't pack your bags yet, take this with a grain of salt. DYOR, NFA, etc.)</span>
   `;
 }

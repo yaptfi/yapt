@@ -45,10 +45,12 @@ function showLoggedInHeader(username) {
   const getStartedBtn = document.getElementById('headerGetStartedBtn');
   const userMenu = document.getElementById('headerUserMenu');
   const usernameEl = document.getElementById('headerUsername');
+  const tagline = document.getElementById('headerTagline');
 
   if (loginBtn) loginBtn.style.display = 'none';
   if (getStartedBtn) getStartedBtn.style.display = 'none';
   if (userMenu) userMenu.style.display = 'flex';
+  if (tagline) tagline.hidden = false;
   if (usernameEl) {
     usernameEl.textContent = username;
   } else {
@@ -60,10 +62,12 @@ function showLoggedOutHeader() {
   const loginBtn = document.getElementById('headerLoginBtn');
   const getStartedBtn = document.getElementById('headerGetStartedBtn');
   const userMenu = document.getElementById('headerUserMenu');
+  const tagline = document.getElementById('headerTagline');
 
   if (loginBtn) loginBtn.style.display = 'inline-block';
   if (getStartedBtn) getStartedBtn.style.display = 'inline-block';
   if (userMenu) userMenu.style.display = 'none';
+  if (tagline) tagline.hidden = true;
 }
 
 // Handle login button click

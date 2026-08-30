@@ -233,7 +233,7 @@
       document.getElementById('lastUpdated').textContent = `Last updated: ${lastUpdated ? formatDate(lastUpdated.toISOString()) : 'Never'}`;
 
       // Render income context
-      renderIncomeContext(estYearlyUsd);
+      renderIncomeContext(estYearlyUsd, positions);
       renderProjectionMaturityNote(positions);
 
       document.getElementById('portfolioSummary').style.display = 'block';
