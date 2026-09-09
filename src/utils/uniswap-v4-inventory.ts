@@ -84,18 +84,26 @@ function getCacheKey(
   return `${chainId}:${walletAddress.toLowerCase()}:${positionManagerAddress.toLowerCase()}:${fromBlock}`;
 }
 
-function assertScanBudget(budget: ScanBudget, operation: string): void {
+function createTimeBudgetError(budget: ScanBudget, operation: string): InventoryBudgetError {
   const elapsedMs = Date.now() - budget.startedAtMs;
-  if (elapsedMs >= budget.timeoutMs) {
-    throw new InventoryBudgetError(
-      `Uniswap v4 inventory discovery stopped after ${budget.queries} bounded RPC queries and ${elapsedMs}ms: ` +
-      `time budget of ${budget.timeoutMs}ms exhausted before ${operation}. Progress was saved for the next scan.`
-    );
+  return new InventoryBudgetError(
+    `Uniswap v4 inventory discovery stopped after ${budget.queries} bounded RPC queries and ${elapsedMs}ms: ` +
+    `time budget of ${budget.timeoutMs}ms exhausted before ${operation}. Checkpointed progress will be resumed on the next scan.`
+  );
+}
+
+function assertTimeBudget(budget: ScanBudget, operation: string): void {
+  if (Date.now() - budget.startedAtMs >= budget.timeoutMs) {
+    throw createTimeBudgetError(budget, operation);
   }
+}
+
+function assertScanBudget(budget: ScanBudget, operation: string): void {
+  assertTimeBudget(budget, operation);
   if (budget.queries >= budget.maxQueries) {
     throw new InventoryBudgetError(
       `Uniswap v4 inventory discovery stopped after ${budget.queries} bounded RPC queries: ` +
-      `query budget of ${budget.maxQueries} exhausted before ${operation}. Progress was saved for the next scan.`
+      `query budget of ${budget.maxQueries} exhausted before ${operation}. Checkpointed progress will be resumed on the next scan.`
     );
   }
   budget.queries += 1;
@@ -105,6 +113,22 @@ function assertScanBudget(budget: ScanBudget, operation: string): void {
       'verified positions will be retained and cold-start progress will be resumed later'
     );
   }
+}
+
+async function runWithinTimeBudget<T>(
+  budget: ScanBudget,
+  operation: string,
+  run: () => Promise<T>
+): Promise<T> {
+  assertTimeBudget(budget, operation);
+  const remainingMs = Math.max(1, budget.timeoutMs - (Date.now() - budget.startedAtMs));
+
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(createTimeBudgetError(budget, operation)), remainingMs);
+    void run()
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timeoutId));
+  });
 }
 
 function getErrorMessages(error: unknown): string[] {
@@ -210,20 +234,26 @@ function isNonexistentTokenError(error: unknown): boolean {
 async function readOwnerAtBlock(
   positionManager: ethers.Contract,
   tokenId: string,
-  latestBlock: number
+  latestBlock: number,
+  budget: ScanBudget
 ): Promise<string | null> {
   let delayMs = 500;
   for (let attempt = 0; attempt < MAX_QUERY_ATTEMPTS; attempt++) {
     try {
-      return await positionManager.ownerOf(tokenId, { blockTag: latestBlock });
+      return await runWithinTimeBudget(
+        budget,
+        `owner of token ${tokenId}`,
+        () => positionManager.ownerOf(tokenId, { blockTag: latestBlock })
+      );
     } catch (error) {
+      if (error instanceof InventoryBudgetError) throw error;
       if (isNonexistentTokenError(error)) return null;
       if (!isRetryableQueryError(error) || attempt >= MAX_QUERY_ATTEMPTS - 1) {
         throw new Error(`Failed to verify ownerOf(${tokenId}) during Uniswap v4 inventory discovery`, {
           cause: error,
         });
       }
-      await sleep(delayMs);
+      await runWithinTimeBudget(budget, `retry delay for token ${tokenId}`, () => sleep(delayMs));
       delayMs = Math.min(delayMs * 2, 5000);
     }
   }
@@ -241,12 +271,20 @@ async function queryFilterRange(
   for (let attempt = 0; attempt < MAX_QUERY_ATTEMPTS; attempt++) {
     try {
       assertScanBudget(budget, `historical logs for blocks ${fromBlock}-${toBlock}`);
-      return await positionManager.queryFilter(filter, fromBlock, toBlock);
+      return await runWithinTimeBudget(
+        budget,
+        `historical logs for blocks ${fromBlock}-${toBlock}`,
+        () => positionManager.queryFilter(filter, fromBlock, toBlock)
+      );
     } catch (error) {
       if (isBlockRangeError(error) || !isRetryableQueryError(error) || attempt >= MAX_QUERY_ATTEMPTS - 1) {
         throw error;
       }
-      await sleep(delayMs);
+      await runWithinTimeBudget(
+        budget,
+        `retry delay for historical logs ${fromBlock}-${toBlock}`,
+        () => sleep(delayMs)
+      );
       delayMs = Math.min(delayMs * 2, 5000);
     }
   }
@@ -323,11 +361,13 @@ async function scanTokenIdRange(
     }));
 
     try {
-      assertScanBudget(
+      const operation = `batched owner checks for token IDs ${tokenIds.at(-1)?.toString()}-${tokenIds[0]?.toString()}`;
+      assertScanBudget(budget, operation);
+      const results = await runWithinTimeBudget(
         budget,
-        `batched owner checks for token IDs ${tokenIds.at(-1)?.toString()}-${tokenIds[0]?.toString()}`
+        operation,
+        () => multicall.tryAggregate.staticCall(false, calls, { blockTag: latestBlock })
       );
-      const results = await multicall.tryAggregate.staticCall(false, calls, { blockTag: latestBlock });
       for (const tokenId of tokenIds) inspectedTokenIds.add(tokenId.toString());
 
       for (let index = 0; index < tokenIds.length; index++) {
@@ -416,7 +456,7 @@ async function scanIncomingTransfers(
       if (!tokenId || inspectedTokenIds.has(tokenId)) continue;
       inspectedTokenIds.add(tokenId);
 
-      const owner = await readOwnerAtBlock(positionManager, tokenId, latestBlock);
+      const owner = await readOwnerAtBlock(positionManager, tokenId, latestBlock, budget);
       if (owner?.toLowerCase() === walletAddress.toLowerCase()) {
         ownedTokenIds.add(tokenId);
         if (BigInt(ownedTokenIds.size) >= expectedBalance) break;
@@ -448,16 +488,36 @@ async function loadWalletUniswapV4Inventory(
   chainId: number
 ): Promise<WalletUniswapV4Position[]> {
   const checksumAddress = toChecksumAddress(walletAddress);
+  const budget: ScanBudget = {
+    queries: 0,
+    maxQueries: getUniswapV4MaxLogQueries(),
+    startedAtMs: Date.now(),
+    timeoutMs: getUniswapV4ScanTimeoutMs(),
+  };
   const positionManager = new ethers.Contract(
     positionManagerAddress,
     getAbi('UniswapV4PositionManager'),
     provider
   );
-  const latestBlock = await provider.getBlockNumber();
-  const persistedState = await loadPersistedState(checksumAddress, chainId, positionManagerAddress);
+  const [latestBlock, persistedState] = await Promise.all([
+    runWithinTimeBudget(
+      budget,
+      'latest block read',
+      () => provider.getBlockNumber()
+    ),
+    loadPersistedState(checksumAddress, chainId, positionManagerAddress),
+  ]);
   const [balanceRaw, nextTokenIdRaw] = await Promise.all([
-    positionManager.balanceOf(checksumAddress, { blockTag: latestBlock }),
-    positionManager.nextTokenId({ blockTag: latestBlock }),
+    runWithinTimeBudget(
+      budget,
+      'wallet position balance',
+      () => positionManager.balanceOf(checksumAddress, { blockTag: latestBlock })
+    ),
+    runWithinTimeBudget(
+      budget,
+      'next position token ID',
+      () => positionManager.nextTokenId({ blockTag: latestBlock })
+    ),
   ]);
   const expectedBalance = BigInt(balanceRaw);
   const currentNextTokenId = BigInt(nextTokenIdRaw);
@@ -479,7 +539,7 @@ async function loadWalletUniswapV4Inventory(
 
   for (const tokenId of persistedState.tokenIds) {
     try {
-      const owner = await readOwnerAtBlock(positionManager, tokenId, latestBlock);
+      const owner = await readOwnerAtBlock(positionManager, tokenId, latestBlock, budget);
       inspectedTokenIds.add(tokenId);
       if (owner?.toLowerCase() === checksumAddress.toLowerCase()) ownedTokenIds.add(tokenId);
     } catch (error) {
@@ -489,12 +549,6 @@ async function loadWalletUniswapV4Inventory(
     }
   }
 
-  const budget: ScanBudget = {
-    queries: 0,
-    maxQueries: getUniswapV4MaxLogQueries(),
-    startedAtMs: Date.now(),
-    timeoutMs: getUniswapV4ScanTimeoutMs(),
-  };
   const batchState: OwnerBatchState = {
     size: getUniswapV4OwnerBatchSize(),
     warningEmitted: false,

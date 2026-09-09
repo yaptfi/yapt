@@ -55,6 +55,7 @@ jest.mock('../../src/models/uniswap-v4-inventory', () => ({
   }),
 }));
 
+import type { Provider } from 'ethers';
 import { ethers } from 'ethers';
 import { sleep } from '../../src/utils/async';
 import {
@@ -342,6 +343,36 @@ describe('uniswap-v4 inventory', () => {
     });
   });
 
+  it('returns verified progress when an ownership RPC hangs past the time budget', async () => {
+    process.env.UNISWAP_V4_SCAN_TIMEOUT_MS = '20';
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(500),
+    } as unknown as Provider;
+    mockInventoryState.tokenIds = ['1'];
+    mockPositionManager.balanceOf.mockResolvedValue(2n);
+    mockPositionManager.nextTokenId.mockResolvedValue(200n);
+    mockMulticall.tryAggregate.staticCall.mockImplementation(() => new Promise(() => undefined));
+    const warningSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const inventory = await getWalletUniswapV4Inventory(
+      WALLET_ADDRESS,
+      POSITION_MANAGER_ADDRESS,
+      1,
+      provider,
+      ARBITRUM_CHAIN_ID
+    );
+
+    expect(inventory.map((entry) => entry.tokenId)).toEqual(['1']);
+    expect(mockMulticall.tryAggregate.staticCall).toHaveBeenCalledTimes(1);
+    expect(mockInventoryState).toMatchObject({
+      tokenIds: ['1'],
+      nextTokenId: '200',
+      coldScanCursor: '199',
+      isComplete: false,
+    });
+    expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining('time budget of 20ms exhausted'));
+  });
+
   it('reduces rejected ownership multicall batches and retries the same IDs', async () => {
     process.env.UNISWAP_V4_OWNER_BATCH_SIZE = '100';
     const provider = { getBlockNumber: jest.fn().mockResolvedValue(500) } as any;
@@ -435,7 +466,9 @@ describe('uniswap-v4 inventory', () => {
   it('shares an in-flight discovery even after the normal success TTL has elapsed', async () => {
     let now = 1_000_000;
     jest.spyOn(Date, 'now').mockImplementation(() => now);
-    const provider = { getBlockNumber: jest.fn().mockResolvedValue(50) } as any;
+    const provider = {
+      getBlockNumber: jest.fn().mockResolvedValue(50),
+    } as unknown as Provider;
     let resolveState: ((state: typeof mockInventoryState) => void) | undefined;
     (getUniswapV4InventoryState as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
       resolveState = resolve;
@@ -449,7 +482,7 @@ describe('uniswap-v4 inventory', () => {
       ARBITRUM_CHAIN_ID
     );
     await Promise.resolve();
-    now += 120_000;
+    now += 61_000;
     const second = getWalletUniswapV4Inventory(
       WALLET_ADDRESS,
       POSITION_MANAGER_ADDRESS,

@@ -134,10 +134,11 @@ The scanner:
    newest-first token-ID scan and persists its cursor. The next re-scan resumes
    instead of starting over.
 7. Deduplicates IDs and stops as soon as the verified count equals `balanceOf`.
-8. Enforces a combined 500-query/10-minute budget by default. If the budget or
-   a provider fails after some NFTs were verified, those positions are returned
-   and progress is saved. A run throws only when it cannot verify any usable
-   inventory.
+8. Enforces a combined 100-query/two-minute budget by default. Each RPC call is
+   deadline-bound, so an unresponsive provider cannot leave the discovery UI
+   waiting past the scan budget. If the budget or a provider fails after some
+   NFTs were verified, those positions are returned and progress is saved. A
+   run throws only when it cannot verify any usable inventory.
 
 In-flight inventory promises never expire, so every sibling v4 adapter joins
 the same long-running scan. Successful inventories are cached for 60 seconds
