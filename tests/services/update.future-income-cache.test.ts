@@ -95,7 +95,7 @@ describe('future-income projection caching', () => {
     mockGetUniswapIncomeForecast.mockResolvedValue({
       dailyRateUsd: 1,
       metadata: {
-        model: 'uniswap-weekday-v1',
+        model: 'uniswap-weekday-v2',
         maturity: 'early',
         observedDays: 1,
         weekdayProfileSource: 'neutral',

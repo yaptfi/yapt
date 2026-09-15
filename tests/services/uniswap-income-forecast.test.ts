@@ -5,7 +5,6 @@ import {
   getProjectionMaturity,
   selectWeekdayProfile,
   WeekdayProfile,
-  winsorizeRates,
 } from '../../src/services/uniswap-income-forecast';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,6 +53,23 @@ function hourlyRows(options: {
     if (hour < hours) {
       const weekday = ts.getUTCDay();
       balance += options.dailyRates[weekday] * (options.scale ?? 1) / 24;
+    }
+  }
+  return rows;
+}
+
+function hourlyRowsByElapsedDay(options: {
+  start: Date;
+  dailyRates: number[];
+}): UniswapRewardSnapshotRow[] {
+  const rows: UniswapRewardSnapshotRow[] = [];
+  let balance = 0;
+  const hours = options.dailyRates.length * 24;
+  for (let hour = 0; hour <= hours; hour += 1) {
+    const ts = new Date(options.start.getTime() + hour * HOUR_MS);
+    rows.push(snapshot(ts, balance));
+    if (hour < hours) {
+      balance += options.dailyRates[Math.floor(hour / 24)] / 24;
     }
   }
   return rows;
@@ -214,40 +230,79 @@ describe('Uniswap sustainable forecast', () => {
     expect(weekly.dailyRateUsd).toBeCloseTo(1, 10);
   });
 
-  it('bounds an isolated 10x earnings spike once robust history is available', () => {
-    const cutoff = new Date('2026-08-30T00:00:00.000Z');
-    const start = new Date(cutoff.getTime() - 14 * DAY_MS);
-    const rows = hourlyRows({ start, days: 14, dailyRates: [1, 1, 1, 1, 10, 1, 1] });
-    const forecast = calculateUniswapIncomeForecast(rows, NEUTRAL_PROFILE, cutoff);
+  it('returns the expected-average rate for flat and changing regimes', () => {
+    const cutoff = new Date('2026-08-29T00:00:00.000Z');
+    const start = new Date('2026-08-01T00:00:00.000Z');
+    const flat = calculateUniswapIncomeForecast(
+      hourlyRowsByElapsedDay({ start, dailyRates: Array(28).fill(100) }),
+      NEUTRAL_PROFILE,
+      cutoff
+    );
+    const falling = calculateUniswapIncomeForecast(
+      hourlyRowsByElapsedDay({
+        start,
+        dailyRates: [...Array(21).fill(100), ...Array(7).fill(0)],
+      }),
+      NEUTRAL_PROFILE,
+      cutoff
+    );
+    const rising = calculateUniswapIncomeForecast(
+      hourlyRowsByElapsedDay({
+        start,
+        dailyRates: [...Array(21).fill(100), ...Array(7).fill(200)],
+      }),
+      NEUTRAL_PROFILE,
+      cutoff
+    );
+    const alternating = calculateUniswapIncomeForecast(
+      hourlyRowsByElapsedDay({
+        start,
+        dailyRates: Array.from({ length: 28 }, (_, day) => [50, 100, 150, 200][day % 4]),
+      }),
+      NEUTRAL_PROFILE,
+      cutoff
+    );
 
-    expect(forecast.weightedMeanDailyRateUsd).toBeCloseTo(1, 10);
-    expect(forecast.dailyRateUsd).toBeCloseTo(1, 10);
-    expect(winsorizeRates([
-      { value: 1, weight: 1 },
-      { value: 1, weight: 1 },
-      { value: 10, weight: 1 },
-    ], 3).map((entry) => entry.value)).toEqual([1, 1, 1]);
+    expect(flat.dailyRateUsd).toBeCloseTo(100, 6);
+    expect(falling.dailyRateUsd).toBeCloseTo(60.9475708249, 6);
+    expect(rising.dailyRateUsd).toBeCloseTo(139.0524291751, 6);
+    expect(alternating.dailyRateUsd).toBeCloseTo(128.0922599024, 6);
   });
 
-  it('blends gradually from the weighted mean toward the 25th percentile', () => {
-    const cutoff = new Date('2026-08-30T00:00:00.000Z');
-    const earlyRows = hourlyRows({
-      start: new Date(cutoff.getTime() - DAY_MS),
-      days: 1,
-      dailyRates: [1, 1, 1, 1, 1, 1, 1],
-    });
-    const early = calculateUniswapIncomeForecast(earlyRows, NEUTRAL_PROFILE, cutoff);
-    expect(early.dailyRateUsd).toBeCloseTo(early.weightedMeanDailyRateUsd);
+  it('keeps observed zero-income history distinct from missing history', () => {
+    const cutoff = new Date('2026-08-29T00:00:00.000Z');
+    const start = new Date('2026-08-01T00:00:00.000Z');
+    const observedZero = calculateUniswapIncomeForecast(
+      hourlyRowsByElapsedDay({ start, dailyRates: Array(28).fill(0) }),
+      NEUTRAL_PROFILE,
+      cutoff
+    );
+    const noHistory = calculateUniswapIncomeForecast([], NEUTRAL_PROFILE, cutoff);
 
-    const matureRates = [1, 4, 1, 4, 1, 4, 1];
-    const developedRows = hourlyRows({
-      start: new Date(cutoff.getTime() - 14 * DAY_MS),
-      days: 14,
-      dailyRates: matureRates,
-    });
-    const developed = calculateUniswapIncomeForecast(developedRows, NEUTRAL_PROFILE, cutoff);
-    expect(developed.dailyRateUsd).toBeCloseTo(developed.conservativeDailyRateUsd);
-    expect(developed.dailyRateUsd).toBeLessThan(developed.weightedMeanDailyRateUsd);
+    expect(observedZero.dailyRateUsd).toBe(0);
+    expect(observedZero.metadata.maturity).toBe('mature');
+    expect(noHistory.dailyRateUsd).toBe(0);
+    expect(noHistory.metadata.maturity).toBe('collecting');
+  });
+
+  it('includes a valid isolated high-fee day in the weighted mean', () => {
+    const cutoff = new Date('2026-08-29T00:00:00.000Z');
+    const start = new Date('2026-08-01T00:00:00.000Z');
+    const dailyRates = Array(28).fill(100);
+    dailyRates[27] = 1000;
+    const forecast = calculateUniswapIncomeForecast(
+      hourlyRowsByElapsedDay({ start, dailyRates }),
+      NEUTRAL_PROFILE,
+      cutoff
+    );
+    const weights = dailyRates.map((_, day) => Math.pow(0.5, (27.5 - day) / 14));
+    const expected = dailyRates.reduce(
+      (sum, rate, day) => sum + rate * weights[day],
+      0
+    ) / weights.reduce((sum, weight) => sum + weight, 0);
+
+    expect(forecast.dailyRateUsd).toBeCloseTo(expected, 6);
+    expect(forecast.dailyRateUsd).toBeGreaterThan(100);
   });
 
   it('transitions through collecting, early, developing, and mature states', () => {

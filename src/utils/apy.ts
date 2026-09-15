@@ -134,7 +134,7 @@ export function computeEmaApy(
  * @returns Estimated daily income in USD
  */
 export function estimateDailyIncome(positionValue: number, currentApy: number): number {
-  return (positionValue * currentApy) / 365;
+  return positionValue * Math.expm1(Math.log1p(currentApy) / 365);
 }
 
 /**
@@ -148,7 +148,7 @@ export function estimateMonthlyIncome(positionValue: number, currentApy: number)
  * Calculate yearly income projection
  */
 export function estimateYearlyIncome(positionValue: number, currentApy: number): number {
-  return positionValue * currentApy;
+  return estimateDailyIncome(positionValue, currentApy) * 365;
 }
 
 /**

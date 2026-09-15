@@ -113,7 +113,7 @@ export interface PositionWithMetrics extends Position {
   estMonthlyUsd: number;
   estYearlyUsd: number;
   projection?: {
-    model: 'uniswap-weekday-v1';
+    model: 'uniswap-weekday-v2';
     maturity: 'collecting' | 'early' | 'developing' | 'mature';
     observedDays: number;
     weekdayProfileSource: 'pool' | 'uniswap' | 'neutral';

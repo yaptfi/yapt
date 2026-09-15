@@ -68,7 +68,7 @@ function formatProjectionSource(source) {
 // Format an income estimate and its maturity metadata for Uniswap fee positions.
 function formatIncomeEstimate(position, field) {
   const projection = position && position.projection;
-  if (!projection || projection.model !== 'uniswap-weekday-v1') {
+  if (!projection || projection.model !== 'uniswap-weekday-v2') {
     return formatCurrency(position ? position[field] : 0);
   }
 
@@ -95,28 +95,33 @@ function renderProjectionMaturityNote(positions) {
   const note = document.getElementById('projectionMaturityNote');
   if (!note) return;
 
-  const projections = positions
-    .map(position => position && position.projection)
-    .filter(projection => projection && projection.model === 'uniswap-weekday-v1');
-  const collecting = projections.filter(projection => projection.maturity === 'collecting').length;
-  const learning = projections.filter(projection =>
-    projection.maturity === 'early' || projection.maturity === 'developing'
-  );
-
-  if (collecting === 0 && learning.length === 0) {
+  if (positions.length === 0) {
     note.textContent = '';
     note.style.display = 'none';
     return;
   }
 
-  const messages = [];
+  const projections = positions
+    .map(position => position && position.projection)
+    .filter(projection => projection && projection.model === 'uniswap-weekday-v2');
+  const collecting = projections.filter(projection => projection.maturity === 'collecting').length;
+  const learning = projections.filter(projection =>
+    projection.maturity === 'early' || projection.maturity === 'developing'
+  );
+  const messages = [
+    'Estimates are average daily earning rates at current position sizes; 7-day, 30-day and yearly amounts scale that rate without compounding. Historical totals also include income from closed positions.'
+  ];
+
+  if (projections.length > 0) {
+    messages.push('Uniswap estimates use recent fee history; positions last confirmed out of range contribute no projected income.');
+  }
   if (collecting > 0) {
-    messages.push(`${collecting} Uniswap position${collecting === 1 ? ' is' : 's are'} still collecting data and has no forecast yet`);
+    messages.push(`${collecting} Uniswap position${collecting === 1 ? ' is' : 's are'} still collecting data and has no forecast yet.`);
   }
   if (learning.length > 0) {
-    messages.push(`portfolio totals include ${learning.length} early/developing Uniswap estimate${learning.length === 1 ? '' : 's'}`);
+    messages.push(`Portfolio totals include ${learning.length} early/developing Uniswap estimate${learning.length === 1 ? '' : 's'}.`);
   }
-  note.textContent = `${messages.join('; ')}. Estimates become more conservative as history builds.`;
+  note.textContent = messages.join(' ');
   note.style.display = 'block';
 }
 

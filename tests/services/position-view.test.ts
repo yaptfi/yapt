@@ -52,6 +52,52 @@ describe('getProjectedIncomeFromMetrics', () => {
     });
   });
 
+  it('treats a real zero seven-day APY as authoritative', () => {
+    const projected = getProjectedIncomeFromMetrics(
+      {
+        ...baseMetrics,
+        valueUsd: 100000,
+        apy7d: 0,
+        apy: 0.1,
+      },
+      'savings'
+    );
+
+    expect(projected).toEqual({
+      estDailyUsd: 0,
+      estMonthlyUsd: 0,
+      estYearlyUsd: 0,
+    });
+  });
+
+  it('falls back only for a missing seven-day APY and preserves negative rates', () => {
+    const missing = getProjectedIncomeFromMetrics(
+      {
+        ...baseMetrics,
+        valueUsd: 100000,
+        apy7d: null,
+        apy: 0.1,
+      },
+      'savings'
+    );
+    const negative = getProjectedIncomeFromMetrics(
+      {
+        ...baseMetrics,
+        valueUsd: 100000,
+        apy7d: -0.05,
+        apy: 0.1,
+      },
+      'savings'
+    );
+
+    expect(missing.estDailyUsd).toBeCloseTo(26.1157876068, 8);
+    expect(negative.estDailyUsd).toBeLessThan(0);
+    expect(negative.estDailyUsd).toBeCloseTo(
+      100000 * Math.expm1(Math.log1p(-0.05) / 365),
+      10
+    );
+  });
+
   it('uses the sustainable rate consistently for Uniswap projection fields', () => {
     const projected = getProjectedIncomeFromMetrics(
       {
@@ -63,7 +109,7 @@ describe('getProjectedIncomeFromMetrics', () => {
           projectedYearlyYield: 730,
         },
         projection: {
-          model: 'uniswap-weekday-v1',
+          model: 'uniswap-weekday-v2',
           maturity: 'developing',
           observedDays: 7,
           weekdayProfileSource: 'pool',
@@ -108,7 +154,7 @@ describe('getProjectedIncomeFromMetrics', () => {
           projectedYearlyYield: 547.5,
         },
         projection: {
-          model: 'uniswap-weekday-v1',
+          model: 'uniswap-weekday-v2',
           maturity: 'early',
           observedDays: 1,
           weekdayProfileSource: 'pool',
@@ -124,7 +170,7 @@ describe('getProjectedIncomeFromMetrics', () => {
     expect(getPortfolioProjectionMetadata([
       {
         projection: {
-          model: 'uniswap-weekday-v1',
+          model: 'uniswap-weekday-v2',
           maturity: 'mature',
           observedDays: 28,
           weekdayProfileSource: 'pool',
@@ -132,14 +178,14 @@ describe('getProjectedIncomeFromMetrics', () => {
       },
       {
         projection: {
-          model: 'uniswap-weekday-v1',
+          model: 'uniswap-weekday-v2',
           maturity: 'developing',
           observedDays: 9,
           weekdayProfileSource: 'neutral',
         },
       },
     ])).toEqual({
-      model: 'uniswap-weekday-v1',
+      model: 'uniswap-weekday-v2',
       maturity: 'developing',
       observedDays: 9,
       weekdayProfileSource: 'neutral',

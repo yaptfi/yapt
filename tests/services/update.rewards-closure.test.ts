@@ -114,7 +114,7 @@ describe('updatePosition reward closure handling', () => {
     mockGetUniswapIncomeForecast.mockResolvedValue({
       dailyRateUsd: 0,
       metadata: {
-        model: 'uniswap-weekday-v1',
+        model: 'uniswap-weekday-v2',
         maturity: 'collecting',
         observedDays: 0,
         weekdayProfileSource: 'neutral',

@@ -18,14 +18,12 @@ const PROFILE_CACHE_MS = HOUR_MS;
 const MIN_CONTRIBUTOR_DAYS = 14;
 const MIN_COHORT_OBSERVATIONS = 28;
 const SPARSE_WEEKDAY_OBSERVATIONS = 8;
-const MAD_SCALE = 1.4826;
-const MAD_CLIP_MULTIPLIER = 3;
 
 export type ProjectionMaturity = 'collecting' | 'early' | 'developing' | 'mature';
 export type WeekdayProfileSource = 'pool' | 'uniswap' | 'neutral';
 
 export interface UniswapProjectionMetadata {
-  model: 'uniswap-weekday-v1';
+  model: 'uniswap-weekday-v2';
   maturity: ProjectionMaturity;
   observedDays: number;
   weekdayProfileSource: WeekdayProfileSource;
@@ -46,8 +44,6 @@ export interface WeekdayProfile {
 
 export interface UniswapIncomeForecast {
   dailyRateUsd: number;
-  weightedMeanDailyRateUsd: number;
-  conservativeDailyRateUsd: number;
   metadata: UniswapProjectionMetadata;
 }
 
@@ -291,28 +287,6 @@ export function selectWeekdayProfile(
   return { factors: [...NEUTRAL_FACTORS], source: 'neutral' };
 }
 
-export function winsorizeRates(
-  rates: WeightedValue[],
-  observedDays: number
-): WeightedValue[] {
-  if (observedDays < 3 || rates.length < 3) {
-    return rates.map((entry) => ({ ...entry }));
-  }
-
-  const median = weightedQuantile(rates, 0.5);
-  const mad = weightedQuantile(
-    rates.map((entry) => ({ value: Math.abs(entry.value - median), weight: entry.weight })),
-    0.5
-  );
-  const spread = MAD_CLIP_MULTIPLIER * MAD_SCALE * mad;
-  const lower = Math.max(0, median - spread);
-  const upper = median + spread;
-
-  return rates.map((entry) => ({
-    value: Math.min(upper, Math.max(lower, entry.value)),
-    weight: entry.weight,
-  }));
-}
 
 export function getProjectionMaturity(
   observations: DailyFeeObservation[]
@@ -344,7 +318,7 @@ export function calculateUniswapIncomeForecast(
   const observedDays = observations.reduce((sum, observation) => sum + observation.coverageDays, 0);
   const maturity = getProjectionMaturity(observations);
   const metadata: UniswapProjectionMetadata = {
-    model: 'uniswap-weekday-v1',
+    model: 'uniswap-weekday-v2',
     maturity,
     observedDays,
     weekdayProfileSource: profile.source,
@@ -353,32 +327,26 @@ export function calculateUniswapIncomeForecast(
   if (observedDays === 0) {
     return {
       dailyRateUsd: 0,
-      weightedMeanDailyRateUsd: 0,
-      conservativeDailyRateUsd: 0,
       metadata,
     };
   }
 
-  const rates = observations.map((observation) => {
-    const ageDays = Math.max(0, (cutoff.getTime() - (observation.day.getTime() + DAY_MS / 2)) / DAY_MS);
-    return {
-      value: observation.dailyRateUsd / profile.factors[observation.weekday],
-      weight: observation.coverageDays * Math.pow(0.5, ageDays / POSITION_HALF_LIFE_DAYS),
-    };
-  });
-  const clippedRates = winsorizeRates(rates, observedDays);
-  const totalWeight = clippedRates.reduce((sum, entry) => sum + entry.weight, 0);
-  const weightedMean = totalWeight === 0
-    ? 0
-    : clippedRates.reduce((sum, entry) => sum + entry.value * entry.weight, 0) / totalWeight;
-  const conservative = weightedQuantile(clippedRates, 0.25);
-  const conservativeBlend = Math.min(1, Math.max(0, (observedDays - 1) / 13));
-  const dailyRate = weightedMean + (conservative - weightedMean) * conservativeBlend;
+  let weightedRateSum = 0;
+  let totalWeight = 0;
+  for (const observation of observations) {
+    const ageDays = Math.max(
+      0,
+      (cutoff.getTime() - (observation.day.getTime() + DAY_MS / 2)) / DAY_MS
+    );
+    const rate = observation.dailyRateUsd / profile.factors[observation.weekday];
+    const weight = observation.coverageDays
+      * Math.pow(0.5, ageDays / POSITION_HALF_LIFE_DAYS);
+    weightedRateSum += rate * weight;
+    totalWeight += weight;
+  }
 
   return {
-    dailyRateUsd: Math.max(0, dailyRate),
-    weightedMeanDailyRateUsd: Math.max(0, weightedMean),
-    conservativeDailyRateUsd: Math.max(0, conservative),
+    dailyRateUsd: totalWeight === 0 ? 0 : weightedRateSum / totalWeight,
     metadata,
   };
 }

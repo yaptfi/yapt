@@ -73,7 +73,7 @@ export function getProjectedIncomeFromMetrics(
     };
   }
 
-  const currentApy = metrics.apy7d || metrics.apy || 0;
+  const currentApy = metrics.apy7d ?? metrics.apy ?? 0;
   return {
     estDailyUsd: estimateDailyIncome(metrics.valueUsd, currentApy),
     estMonthlyUsd: estimateMonthlyIncome(metrics.valueUsd, currentApy),
@@ -181,7 +181,7 @@ export function getPortfolioProjectionMetadata(
       : 'pool';
 
   return {
-    model: 'uniswap-weekday-v1',
+    model: 'uniswap-weekday-v2',
     maturity: leastMature.maturity,
     observedDays: Math.min(...projections.map((projection) => projection.observedDays)),
     weekdayProfileSource: source,

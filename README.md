@@ -124,11 +124,11 @@ See `CLAUDE.md` for detailed development setup and architecture documentation.
 - **Manual**: Refresh button available (rate-limited to once per 5 minutes)
 - **APY Calculation**: Two-point method with deposit/withdrawal correction
 - **Income Projections**: Savings and fixed-income positions use their existing
-  APY/YTM models. Uniswap reward positions use `uniswap-weekday-v1`, which
-  estimates stablecoin fees after the first valid hourly interval, learns UTC
-  weekday seasonality from aggregate snapshot history, and becomes more
-  conservative as observations mature. Claims and snapshot gaps over six hours
-  are excluded from the forecast; actual 7-day yield remains reported separately.
+  APY/YTM models. Uniswap reward positions use `uniswap-weekday-v2`, which
+  estimates an expected average daily fee rate from recent valid observations
+  and UTC weekday seasonality. Claims and snapshot gaps over six hours are
+  excluded. Projection horizons scale the current-size daily rate without
+  compounding; historical yield totals remain separate and include closed positions.
 
 ### Counting Modes
 - **count**: Full position value (principal + yield)

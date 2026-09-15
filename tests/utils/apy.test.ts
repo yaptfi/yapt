@@ -109,25 +109,30 @@ describe('APY Calculations', () => {
   });
 
   describe('Income Projections', () => {
-    const positionValue = 100000; // $100k
-    const apy = 0.05; // 5%
+    const positionValue = 100000;
+    const apy = 0.1;
 
-    it('should calculate daily income correctly', () => {
+    it('derives fixed-size horizon rates from compounded APY', () => {
       const daily = estimateDailyIncome(positionValue, apy);
-      expect(daily).toBeCloseTo(100000 * 0.05 / 365, 2);
-      expect(daily).toBeCloseTo(13.70, 2);
+
+      expect(daily).toBeCloseTo(26.1157876068, 8);
+      expect(estimateMonthlyIncome(positionValue, apy)).toBeCloseTo(daily * 30, 10);
+      expect(estimateYearlyIncome(positionValue, apy)).toBeCloseTo(daily * 365, 10);
     });
 
-    it('should calculate monthly income correctly', () => {
-      const monthly = estimateMonthlyIncome(positionValue, apy);
-      expect(monthly).toBeCloseTo(100000 * 0.05 / 365 * 30, 2);
-      expect(monthly).toBeCloseTo(410.96, 2);
+    it('annualizes the daily rate back to the input APY', () => {
+      const dailyRate = estimateDailyIncome(positionValue, apy) / positionValue;
+
+      expect(Math.expm1(365 * Math.log1p(dailyRate))).toBeCloseTo(apy, 12);
     });
 
-    it('should calculate yearly income correctly', () => {
-      const yearly = estimateYearlyIncome(positionValue, apy);
-      expect(yearly).toBe(100000 * 0.05);
-      expect(yearly).toBe(5000);
+    it('preserves zero and negative yield signs', () => {
+      expect(estimateDailyIncome(positionValue, 0)).toBe(0);
+      expect(estimateMonthlyIncome(positionValue, 0)).toBe(0);
+      expect(estimateYearlyIncome(positionValue, 0)).toBe(0);
+      expect(estimateDailyIncome(positionValue, -0.1)).toBeLessThan(0);
+      expect(estimateMonthlyIncome(positionValue, -0.1)).toBeLessThan(0);
+      expect(estimateYearlyIncome(positionValue, -0.1)).toBeLessThan(0);
     });
   });
 
