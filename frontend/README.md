@@ -28,8 +28,8 @@ Simple, single-page frontend for Yapt, your friendly DeFi yield tracking compani
 - `styles.css` - Dark theme styling
 - `auth.js` - Auth/session handling and redirects
 - `app.js` - Dashboard logic and API integration
- - `data/nyc-salary-bands.json` - NYC occupation salary bands (10k increments)
- - `data/income-location-bands.json` - Countries grouped by average income bands (10k increments)
+- `data/nyc-salary-bands.json` - BLS New York metro occupation wage benchmarks and comparison bands
+- `data/income-location-bands.json` - Livingcost country budgets grouped by illustrative comfortable-living thresholds
 
 ## Run Locally
 

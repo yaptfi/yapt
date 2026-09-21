@@ -212,7 +212,7 @@ function pickBand(bands, value) {
   for (const band of bands) {
     const min = Number(band.min) || 0;
     const max = band.max === null || band.max === undefined ? Infinity : Number(band.max);
-    if (value >= min && value <= max) return band;
+    if (value >= min && value < max) return band;
   }
   return null;
 }
@@ -253,17 +253,30 @@ async function renderIncomeContext(annualIncome, positions = []) {
     return;
   }
 
-  // Choose a random occupation/location from the band
-  const occ = Array.isArray(nycBand.occupations) && nycBand.occupations.length > 0
-    ? nycBand.occupations[Math.floor(Math.random() * nycBand.occupations.length)]
-    : (nycBand.label || 'worker');
-  const place = Array.isArray(locBand.examples) && locBand.examples.length > 0
-    ? locBand.examples[Math.floor(Math.random() * locBand.examples.length)]
-    : (locBand.label || 'many countries');
+  let occupationText;
+  if (typeof nycBand.message === 'string') {
+    occupationText = nycBand.message;
+  } else if (Array.isArray(nycBand.occupations) && nycBand.occupations.length > 0) {
+    const occupation = nycBand.occupations[Math.floor(Math.random() * nycBand.occupations.length)];
+    occupationText = `Your estimated annual income is in the same ballpark as pay for <strong>${occupation}</strong> in the New York metro area.`;
+  }
+
+  let locationText;
+  if (typeof locBand.message === 'string') {
+    locationText = locBand.message;
+  } else if (Array.isArray(locBand.examples) && locBand.examples.length > 0) {
+    const place = locBand.examples[Math.floor(Math.random() * locBand.examples.length)];
+    locationText = `If available to spend, this could support living comfortably-ish in <strong>${place}</strong>.`;
+  }
+
+  if (!occupationText || !locationText) {
+    el.innerHTML = '';
+    return;
+  }
 
   el.innerHTML = `
-    With this estimated annual income, you make about as much as a <strong>${occ}</strong> in New York.
-    You could likely live comfortably-ish in <strong>${place}</strong>.
-    <span class="disclaimer">(Don't pack your bags yet, take this with a grain of salt. DYOR, NFA, etc.)</span>
+    ${occupationText}
+    ${locationText}
+    <span class="disclaimer">Refreshed Sep 2026. Wages: <a href="https://data.bls.gov/oes/#/area/0035620/2025">BLS, May 2025</a>; living costs: <a href="https://livingcost.org/cost">Livingcost, Jun 2026</a>. One adult, rent included, plus a 50% cushion. National estimates; cities, taxes, visas, healthcare and safety vary. Don't pack your bags yet—illustrative, not relocation advice.</span>
   `;
 }

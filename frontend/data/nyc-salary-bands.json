@@ -1,28 +1,449 @@
 {
-  "city": "New York",
+  "city": "New York metro area",
   "currency": "USD",
-  "bands": [
-    { "min": 0,     "max": 1000,  "occupations": ["Beggar"] },
-    { "min": 1000,  "max": 10000,  "occupations": ["Part‑time student worker", "Seasonal worker"] },
-    { "min": 10000, "max": 20000,  "occupations": ["Barista", "Food service worker"] },
-    { "min": 20000, "max": 30000,  "occupations": ["Retail salesperson", "Home health aide"] },
-    { "min": 30000, "max": 40000,  "occupations": ["Hairdresser", "Bartender"] },
-    { "min": 40000, "max": 50000,  "occupations": ["Receptionist", "Security guard"] },
-    { "min": 50000, "max": 60000,  "occupations": ["Administrative assistant", "Paralegal (entry)"] },
-    { "min": 60000, "max": 70000,  "occupations": ["Electrician", "Plumber"] },
-    { "min": 70000, "max": 80000,  "occupations": ["Public school teacher", "Police officer"] },
-    { "min": 80000, "max": 90000,  "occupations": ["Registered nurse", "Accountant"] },
-    { "min": 90000, "max": 100000, "occupations": ["Software engineer (entry)", "Marketing specialist"] },
-    { "min": 100000, "max": 110000, "occupations": ["Financial analyst", "UX designer"] },
-    { "min": 110000, "max": 120000, "occupations": ["Project manager", "Data analyst (mid)"] },
-    { "min": 120000, "max": 130000, "occupations": ["Product manager (associate)", "Attorney (entry)"] },
-    { "min": 130000, "max": 140000, "occupations": ["Senior software engineer", "Pharmacist"] },
-    { "min": 140000, "max": 150000, "occupations": ["Attorney (mid)", "Architect (senior)"] },
-    { "min": 150000, "max": 180000, "occupations": ["Investment banking analyst (total comp)", "Senior data scientist"] },
-    { "min": 180000, "max": 200000, "occupations": ["BigLaw associate", "Staff software engineer"] },
-    { "min": 200000, "max": 500000, "occupations": ["Physician (attending)", "VP/Director (tech/finance)"] },
-    { "min": 500000, "max": null,   "occupations": ["Top Dog"] }
+  "updated": "2026-09-21",
+  "referencePeriod": "May 2025",
+  "statistic": "Annual mean wage",
+  "areaCode": "0035620",
+  "source": {
+    "name": "BLS OEWS",
+    "url": "https://data.bls.gov/oes/#/area/0035620/2025"
+  },
+  "minimumWage": {
+    "hourlyUsd": 17,
+    "annualHours": 2080,
+    "effectiveDate": "2026-01-01",
+    "sourceUrl": "https://dol.ny.gov/minimum-wage"
+  },
+  "benchmarks": [
+    {
+      "occupation": "Chief Executives",
+      "soc": "11-1011",
+      "annualMeanUsd": 392410
+    },
+    {
+      "occupation": "Computer and Information Systems Managers",
+      "soc": "11-3021",
+      "annualMeanUsd": 224990
+    },
+    {
+      "occupation": "Financial Managers",
+      "soc": "11-3031",
+      "annualMeanUsd": 250570
+    },
+    {
+      "occupation": "Construction Managers",
+      "soc": "11-9021",
+      "annualMeanUsd": 162800
+    },
+    {
+      "occupation": "Project Management Specialists",
+      "soc": "13-1082",
+      "annualMeanUsd": 131730
+    },
+    {
+      "occupation": "Market Research Analysts and Marketing Specialists",
+      "soc": "13-1161",
+      "annualMeanUsd": 106310
+    },
+    {
+      "occupation": "Accountants and Auditors",
+      "soc": "13-2011",
+      "annualMeanUsd": 119280
+    },
+    {
+      "occupation": "Financial and Investment Analysts",
+      "soc": "13-2051",
+      "annualMeanUsd": 148350
+    },
+    {
+      "occupation": "Computer Systems Analysts",
+      "soc": "15-1211",
+      "annualMeanUsd": 129150
+    },
+    {
+      "occupation": "Information Security Analysts",
+      "soc": "15-1212",
+      "annualMeanUsd": 149280
+    },
+    {
+      "occupation": "Computer User Support Specialists",
+      "soc": "15-1232",
+      "annualMeanUsd": 78800
+    },
+    {
+      "occupation": "Software Developers",
+      "soc": "15-1252",
+      "annualMeanUsd": 165870
+    },
+    {
+      "occupation": "Web and Digital Interface Designers",
+      "soc": "15-1255",
+      "annualMeanUsd": 130190
+    },
+    {
+      "occupation": "Data Scientists",
+      "soc": "15-2051",
+      "annualMeanUsd": 144700
+    },
+    {
+      "occupation": "Architects, Except Landscape and Naval",
+      "soc": "17-1011",
+      "annualMeanUsd": 114000
+    },
+    {
+      "occupation": "Civil Engineers",
+      "soc": "17-2051",
+      "annualMeanUsd": 122340
+    },
+    {
+      "occupation": "Lawyers",
+      "soc": "23-1011",
+      "annualMeanUsd": 224840
+    },
+    {
+      "occupation": "Paralegals and Legal Assistants",
+      "soc": "23-2011",
+      "annualMeanUsd": 80260
+    },
+    {
+      "occupation": "Elementary School Teachers, Except Special Education",
+      "soc": "25-2021",
+      "annualMeanUsd": 96400
+    },
+    {
+      "occupation": "Secondary School Teachers, Except Special and Career/Technical Education",
+      "soc": "25-2031",
+      "annualMeanUsd": 100020
+    },
+    {
+      "occupation": "Graphic Designers",
+      "soc": "27-1024",
+      "annualMeanUsd": 85950
+    },
+    {
+      "occupation": "Dentists, General",
+      "soc": "29-1021",
+      "annualMeanUsd": 202800
+    },
+    {
+      "occupation": "Pharmacists",
+      "soc": "29-1051",
+      "annualMeanUsd": 142420
+    },
+    {
+      "occupation": "Physician Assistants",
+      "soc": "29-1071",
+      "annualMeanUsd": 163570
+    },
+    {
+      "occupation": "Occupational Therapists",
+      "soc": "29-1122",
+      "annualMeanUsd": 107110
+    },
+    {
+      "occupation": "Physical Therapists",
+      "soc": "29-1123",
+      "annualMeanUsd": 110480
+    },
+    {
+      "occupation": "Veterinarians",
+      "soc": "29-1131",
+      "annualMeanUsd": 166290
+    },
+    {
+      "occupation": "Registered Nurses",
+      "soc": "29-1141",
+      "annualMeanUsd": 119600
+    },
+    {
+      "occupation": "Nurse Practitioners",
+      "soc": "29-1171",
+      "annualMeanUsd": 162620
+    },
+    {
+      "occupation": "Family Medicine Physicians",
+      "soc": "29-1215",
+      "annualMeanUsd": 236510
+    },
+    {
+      "occupation": "General Internal Medicine Physicians",
+      "soc": "29-1216",
+      "annualMeanUsd": 194860
+    },
+    {
+      "occupation": "Psychiatrists",
+      "soc": "29-1223",
+      "annualMeanUsd": 251460
+    },
+    {
+      "occupation": "Surgeons, All Other",
+      "soc": "29-1249",
+      "annualMeanUsd": 364870
+    },
+    {
+      "occupation": "Dental Hygienists",
+      "soc": "29-1292",
+      "annualMeanUsd": 109220
+    },
+    {
+      "occupation": "Emergency Medical Technicians",
+      "soc": "29-2042",
+      "annualMeanUsd": 56910
+    },
+    {
+      "occupation": "Home Health and Personal Care Aides",
+      "soc": "31-1120",
+      "annualMeanUsd": 41120
+    },
+    {
+      "occupation": "Medical Assistants",
+      "soc": "31-9092",
+      "annualMeanUsd": 49590
+    },
+    {
+      "occupation": "Police and Sheriff's Patrol Officers",
+      "soc": "33-3051",
+      "annualMeanUsd": 92940
+    },
+    {
+      "occupation": "Security Guards",
+      "soc": "33-9032",
+      "annualMeanUsd": 46140
+    },
+    {
+      "occupation": "Chefs and Head Cooks",
+      "soc": "35-1011",
+      "annualMeanUsd": 74840
+    },
+    {
+      "occupation": "Bartenders",
+      "soc": "35-3011",
+      "annualMeanUsd": 63630
+    },
+    {
+      "occupation": "Fast Food and Counter Workers",
+      "soc": "35-3023",
+      "annualMeanUsd": 37130
+    },
+    {
+      "occupation": "Hairdressers, Hairstylists, and Cosmetologists",
+      "soc": "39-5012",
+      "annualMeanUsd": 51650
+    },
+    {
+      "occupation": "Childcare Workers",
+      "soc": "39-9011",
+      "annualMeanUsd": 40010
+    },
+    {
+      "occupation": "Retail Salespersons",
+      "soc": "41-2031",
+      "annualMeanUsd": 43950
+    },
+    {
+      "occupation": "Receptionists and Information Clerks",
+      "soc": "43-4171",
+      "annualMeanUsd": 45430
+    },
+    {
+      "occupation": "Secretaries and Administrative Assistants, Except Legal, Medical, and Executive",
+      "soc": "43-6014",
+      "annualMeanUsd": 53310
+    },
+    {
+      "occupation": "Electricians",
+      "soc": "47-2111",
+      "annualMeanUsd": 88670
+    },
+    {
+      "occupation": "Plumbers, Pipefitters, and Steamfitters",
+      "soc": "47-2152",
+      "annualMeanUsd": 90820
+    },
+    {
+      "occupation": "Airline Pilots, Copilots, and Flight Engineers",
+      "soc": "53-2011",
+      "annualMeanUsd": 297880
+    },
+    {
+      "occupation": "Heavy and Tractor-Trailer Truck Drivers",
+      "soc": "53-3032",
+      "annualMeanUsd": 69020
+    },
+    {
+      "occupation": "Bus Drivers, Transit and Intercity",
+      "soc": "53-3052",
+      "annualMeanUsd": 73350
+    }
   ],
-  "note": "Bands are approximate (10k increments) and illustrative using NYC medians/market ranges circa 2023–2025."
+  "bands": [
+    {
+      "min": 0,
+      "max": 35360,
+      "occupations": [],
+      "message": "Side-income territory—below NYC's 2026 full-time minimum-wage equivalent."
+    },
+    {
+      "min": 35360,
+      "max": 40000,
+      "occupations": [
+        "Fast Food and Counter Workers"
+      ]
+    },
+    {
+      "min": 40000,
+      "max": 50000,
+      "occupations": [
+        "Home Health and Personal Care Aides",
+        "Medical Assistants",
+        "Security Guards",
+        "Childcare Workers",
+        "Retail Salespersons",
+        "Receptionists and Information Clerks"
+      ]
+    },
+    {
+      "min": 50000,
+      "max": 60000,
+      "occupations": [
+        "Emergency Medical Technicians",
+        "Hairdressers, Hairstylists, and Cosmetologists",
+        "Secretaries and Administrative Assistants, Except Legal, Medical, and Executive"
+      ]
+    },
+    {
+      "min": 60000,
+      "max": 70000,
+      "occupations": [
+        "Bartenders",
+        "Heavy and Tractor-Trailer Truck Drivers"
+      ]
+    },
+    {
+      "min": 70000,
+      "max": 80000,
+      "occupations": [
+        "Computer User Support Specialists",
+        "Chefs and Head Cooks",
+        "Bus Drivers, Transit and Intercity"
+      ]
+    },
+    {
+      "min": 80000,
+      "max": 90000,
+      "occupations": [
+        "Paralegals and Legal Assistants",
+        "Graphic Designers",
+        "Electricians"
+      ]
+    },
+    {
+      "min": 90000,
+      "max": 100000,
+      "occupations": [
+        "Elementary School Teachers, Except Special Education",
+        "Police and Sheriff's Patrol Officers",
+        "Plumbers, Pipefitters, and Steamfitters"
+      ]
+    },
+    {
+      "min": 100000,
+      "max": 110000,
+      "occupations": [
+        "Market Research Analysts and Marketing Specialists",
+        "Secondary School Teachers, Except Special and Career/Technical Education",
+        "Occupational Therapists",
+        "Dental Hygienists"
+      ]
+    },
+    {
+      "min": 110000,
+      "max": 120000,
+      "occupations": [
+        "Accountants and Auditors",
+        "Architects, Except Landscape and Naval",
+        "Physical Therapists",
+        "Registered Nurses"
+      ]
+    },
+    {
+      "min": 120000,
+      "max": 130000,
+      "occupations": [
+        "Computer Systems Analysts",
+        "Civil Engineers"
+      ]
+    },
+    {
+      "min": 130000,
+      "max": 140000,
+      "occupations": [
+        "Project Management Specialists",
+        "Web and Digital Interface Designers"
+      ]
+    },
+    {
+      "min": 140000,
+      "max": 150000,
+      "occupations": [
+        "Financial and Investment Analysts",
+        "Information Security Analysts",
+        "Data Scientists",
+        "Pharmacists"
+      ]
+    },
+    {
+      "min": 150000,
+      "max": 180000,
+      "occupations": [
+        "Construction Managers",
+        "Software Developers",
+        "Physician Assistants",
+        "Veterinarians",
+        "Nurse Practitioners"
+      ]
+    },
+    {
+      "min": 180000,
+      "max": 200000,
+      "occupations": [
+        "General Internal Medicine Physicians"
+      ]
+    },
+    {
+      "min": 200000,
+      "max": 250000,
+      "occupations": [
+        "Computer and Information Systems Managers",
+        "Lawyers",
+        "Dentists, General",
+        "Family Medicine Physicians"
+      ]
+    },
+    {
+      "min": 250000,
+      "max": 300000,
+      "occupations": [
+        "Financial Managers",
+        "Psychiatrists",
+        "Airline Pilots, Copilots, and Flight Engineers"
+      ]
+    },
+    {
+      "min": 300000,
+      "max": 400000,
+      "occupations": [
+        "Chief Executives",
+        "Surgeons, All Other"
+      ]
+    },
+    {
+      "min": 400000,
+      "max": null,
+      "occupations": [],
+      "message": "Above the salary comparisons in this card—top-dog territory."
+    }
+  ],
+  "note": "May 2025 BLS OEWS annual mean wages for the New York–Newark–Jersey City, NY–NJ metropolitan area, available for the September 2026 refresh. Gross wage benchmarks, not medians, take-home pay, or total compensation; self-employed workers are excluded. Bands are illustrative and broaden at higher incomes."
 }
-
