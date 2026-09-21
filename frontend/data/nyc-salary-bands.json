@@ -440,10 +440,67 @@
     },
     {
       "min": 400000,
+      "max": 500000,
+      "occupations": [
+        "AI engineer at Google",
+        "partner at a major law firm",
+        "specialist surgeon at a top hospital"
+      ]
+    },
+    {
+      "min": 500000,
+      "max": 600000,
+      "occupations": [
+        "managing director at an investment bank",
+        "staff AI researcher at a leading lab",
+        "senior portfolio manager at a hedge fund"
+      ]
+    },
+    {
+      "min": 600000,
+      "max": 700000,
+      "occupations": [
+        "Big Tech vice president",
+        "private equity partner",
+        "rainmaker at a global law firm"
+      ]
+    },
+    {
+      "min": 700000,
+      "max": 800000,
+      "occupations": [
+        "distinguished engineer at a Big Tech company",
+        "Fortune 500 division president",
+        "top-performing hedge fund portfolio manager"
+      ]
+    },
+    {
+      "min": 800000,
+      "max": 900000,
+      "occupations": [
+        "C-suite executive at a public company",
+        "managing partner at a large law firm",
+        "principal at a successful private equity fund"
+      ]
+    },
+    {
+      "min": 900000,
+      "max": 1000000,
+      "occupations": [
+        "chief investment officer at a major fund",
+        "founder of a successful tech company",
+        "senior executive at an S&P 500 company"
+      ]
+    },
+    {
+      "min": 1000000,
       "max": null,
-      "occupations": [],
-      "message": "Above the salary comparisons in this card—top-dog territory."
+      "occupations": [
+        "CEO of an S&P 500 company",
+        "partner at a top-performing hedge fund",
+        "tech founder after a very good year"
+      ]
     }
   ],
-  "note": "May 2025 BLS OEWS annual mean wages for the New York–Newark–Jersey City, NY–NJ metropolitan area, available for the September 2026 refresh. Gross wage benchmarks, not medians, take-home pay, or total compensation; self-employed workers are excluded. Bands are illustrative and broaden at higher incomes."
+  "note": "May 2025 BLS OEWS annual mean wages for the New York–Newark–Jersey City, NY–NJ metropolitan area, available for the September 2026 refresh. Gross wage benchmarks, not medians, take-home pay, or total compensation; self-employed workers are excluded. Bands below $400,000 use the sourced benchmarks; higher bands are playful illustrative comparisons."
 }

@@ -277,6 +277,6 @@ async function renderIncomeContext(annualIncome, positions = []) {
   el.innerHTML = `
     ${occupationText}
     ${locationText}
-    <span class="disclaimer">Refreshed Sep 2026. Wages: <a href="https://data.bls.gov/oes/#/area/0035620/2025">BLS, May 2025</a>; living costs: <a href="https://livingcost.org/cost">Livingcost, Jun 2026</a>. One adult, rent included, plus a 50% cushion. National estimates; cities, taxes, visas, healthcare and safety vary. Don't pack your bags yet—illustrative, not relocation advice.</span>
+    <span class="disclaimer">One adult, rent included, plus a 50% cushion. National estimates; cities, taxes, visas, healthcare and safety vary. Don't pack your bags yet—illustrative, not relocation advice.</span>
   `;
 }
