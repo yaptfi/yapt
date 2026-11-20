@@ -152,6 +152,33 @@ ownership batches and log queries), `UNISWAP_V4_SCAN_TIMEOUT_MS`,
 `UNISWAP_V4_RECENT_SCAN_BLOCKS`. Raising them is usually the wrong fix because
 normal progress is resumable.
 
+### Infinifi unwinding positions
+
+Infinifi unwinding (cooldown) positions are keyed on-chain by
+`(user, startUnwindingTimestamp)` and cannot be enumerated, so the
+`infinifi-unwinding` adapter finds start timestamps from the LockingController's
+`PositionRemoved` logs, filtered by the indexed user topic, and verifies each
+one with `UnwindingModule.balanceOf(user, timestamp)`.
+
+The log scan uses the managed scan-capable provider and the shared resumable
+scanner in `src/utils/log-scan.ts`, with a per-wallet checkpoint in
+`wallet_log_scan_state`:
+
+1. A first run scans backwards from the chain head, so recent unwindings are
+   found right away even when the full history needs several runs.
+2. Later runs scan new blocks forward first (re-scanning a 32-block reorg
+   overlap), then continue older history towards the contract deployment block.
+3. Chunk sizes adapt to provider-reported range limits. Progress and unverified
+   candidate timestamps are saved before verification, and candidates that
+   verify to a zero balance (withdrawn, cancelled, or epoch extensions) are
+   dropped.
+4. Each run is capped at 100 log queries (`INFINIFI_UNWINDING_MAX_LOG_QUERIES`),
+   starting from 500,000-block chunks (`INFINIFI_UNWINDING_SCAN_CHUNK_SIZE`).
+   On a 10k-block provider, full history takes a few discovery runs.
+
+Without a scan-capable provider the adapter skips scanning, logs a warning, and
+only re-verifies timestamps it already knows.
+
 ## Configuration
 
 ### Admin UI / database

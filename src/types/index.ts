@@ -150,6 +150,7 @@ export interface ProtocolConfig {
     curveVaultToken?: string;
     cvxCrvToken?: string;
     lockingController?: string;
+    unwindingModule?: string; // Infinifi UnwindingModule (cooldown positions)
     unwindingEpochs?: number;
     exchangeRateScale?: string;
     rewardToken?: string;

@@ -91,7 +91,7 @@ See `CLAUDE.md` for detailed development setup and architecture documentation.
 - **Curve Savings**: sCrvUSD vault
 - **Sky Protocol**: sUSDS savings
 - **f(x) Protocol**: fxSAVE USDC vault
-- **Infinifi**: siUSD staking
+- **Infinifi**: siUSD staking, liUSD-4w locking, and iUSD unwinding (cooldown) positions
 - **Morpheus**: gtUSDC Prime
 
 ### Yield Vaults

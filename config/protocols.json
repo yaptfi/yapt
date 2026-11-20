@@ -225,6 +225,20 @@
       "InfinifiLockingController"
     ]
   },
+  "infinifi-unwinding": {
+    "name": "Infinifi iUSD Unwinding",
+    "lockingController": "0x1d95cC100D6Cd9C7BbDbD7Cb328d99b3D6037fF7",
+    "unwindingModule": "0x7092a43ae5407666c78dbea657a1891f42b3dfcc",
+    "deployBlock": 22540451,
+    "baseAsset": "iUSD",
+    "decimals": 18,
+    "chainId": 1,
+    "countingMode": "count",
+    "abiKeys": [
+      "InfinifiLockingController",
+      "InfinifiUnwindingModule"
+    ]
+  },
   "sky-savings-usds": {
     "name": "Sky Savings USDS",
     "token": "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",

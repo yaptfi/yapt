@@ -7,6 +7,7 @@ import { CurveLendingWbtcAdapter } from './curve-lending-wbtc';
 import { ConvexCurveVaultAdapter } from './convex-curve-vault';
 import { InfinifiSiusdAdapter } from './infinifi-siusd';
 import { InfinifiLiusd4wAdapter } from './infinifi-liusd-4w';
+import { InfinifiUnwindingAdapter } from './infinifi-unwinding';
 import { YearnV3Adapter } from './yearn-v3';
 import { UniswapV4Adapter } from './uniswap-v4';
 import { UniswapV3WbtcUsdtArbitrumRewardsAdapter } from './uniswap-v3-wbtc-usdt-arbitrum-rewards';
@@ -49,6 +50,7 @@ export {
   ConvexCurveVaultAdapter,
   InfinifiSiusdAdapter,
   InfinifiLiusd4wAdapter,
+  InfinifiUnwindingAdapter,
   YearnV3Adapter,
   UniswapV4Adapter,
   UniswapV3WbtcUsdtArbitrumRewardsAdapter,

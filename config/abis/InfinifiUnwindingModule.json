@@ -1,0 +1,25 @@
+[
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_user", "type": "address" },
+      { "internalType": "uint256", "name": "_startUnwindingTimestamp", "type": "uint256" }
+    ],
+    "name": "balanceOf",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bytes32", "name": "id", "type": "bytes32" }],
+    "name": "positions",
+    "outputs": [
+      { "internalType": "uint256", "name": "shares", "type": "uint256" },
+      { "internalType": "uint32", "name": "fromEpoch", "type": "uint32" },
+      { "internalType": "uint32", "name": "toEpoch", "type": "uint32" },
+      { "internalType": "uint256", "name": "fromRewardWeight", "type": "uint256" },
+      { "internalType": "uint256", "name": "rewardWeightDecrease", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

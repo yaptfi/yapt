@@ -124,7 +124,8 @@ Positions have three semantic categories, derived at the service layer from the 
 Protocol-specific gotchas worth preserving:
 - Yearn-style ERC4626 vaults can have different share vs asset decimals (`shareDecimals` vs `decimals`).
 - Uniswap v4 discovery uses the shared persisted inventory scanner: verify DB-known NFT IDs at a fixed latest block, compare `balanceOf`, scan new sequential token IDs with Multicall3, use adaptive incremental transfer logs for older transfers, and persist a resumable cold-scan cursor. Stop when the verified count satisfies `balanceOf`; never discard verified partial results because later discovery work failed.
-- Preserve recursive ethers error parsing for nested `error`, `info`, and `value[]` payloads; Infura throttles have appeared as `BAD_DATA` with `-32005`/`Too Many Requests` inside `value[]`.
+- Preserve recursive ethers error parsing for nested `error`, `info`, and `value[]` payloads; Infura throttles have appeared as `BAD_DATA` with `-32005`/`Too Many Requests` inside `value[]`. The shared helpers live in `src/utils/rpc-errors.ts`.
+- Infinifi unwinding (cooldown) positions are keyed by `(user, startUnwindingTimestamp)` and are not enumerable. Discover them from `PositionRemoved` logs through the resumable `scanLogsResumable` (`src/utils/log-scan.ts`) with a `wallet_log_scan_state` checkpoint, and always verify with `UnwindingModule.balanceOf`.
 - For Uniswap v4 pool reads, use the Position Manager as owner when querying position state.
 - Decode packed int24 ticks with proper two's-complement conversion.
 
